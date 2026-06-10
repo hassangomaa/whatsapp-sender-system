@@ -32,41 +32,36 @@ dig +short api.whatsapp.arheb.net
 
 ---
 
-## 2. One-time VPS bootstrap
+## 2. One-command deploy (fully automated)
 
-SSH to the server, then either run the bootstrap script or follow the manual steps below.
-
-### Option A — automated bootstrap
-
-```bash
-# From your machine, copy repo or clone on VPS first:
-cd /var/www
-git clone https://github.com/hassangomaa/whatsapp-sender-system.git whatsapp-sender
-cd whatsapp-sender
-sudo bash scripts/vps/bootstrap.sh
-```
-
-### Option B — manual
+No manual `.env` editing. Secrets are auto-generated and saved to `.env.secrets`.
 
 ```bash
 cd /var/www
 git clone https://github.com/hassangomaa/whatsapp-sender-system.git whatsapp-sender
 cd whatsapp-sender
-cp .env.vps.example .env
-nano .env   # set secrets (see below)
-chmod +x deploy-vps.sh scripts/vps/bootstrap.sh
 sudo ./deploy-vps.sh full
 ```
 
-### `.env` secrets
+Or from anywhere on the VPS:
 
-Edit `/var/www/whatsapp-sender/.env`:
+```bash
+sudo bash /var/www/whatsapp-sender/scripts/vps/bootstrap.sh
+```
 
-- `POSTGRES_PASSWORD` — strong password
-- `DATABASE_URL` — use the **same** password: `postgresql://whatsapp:<password>@postgres:5432/whatsapp_sender`
-- `JWT_SECRET` — random 64+ characters
-- `WEBHOOK_SIGNING_SECRET` — random secret
-- URLs should already be set for arheb.net (HTTPS)
+`deploy-vps.sh full` automatically:
+
+1. Writes `.env` (hardcoded arheb.net URLs + ports 3020/3021)
+2. Builds and starts Docker stack
+3. Runs `prisma db push` + seed
+4. Configures nginx + certbot SSL
+5. Runs smoke tests
+
+### Fix DB only (if register fails)
+
+```bash
+sudo ./deploy-vps.sh migrate
+```
 
 ---
 

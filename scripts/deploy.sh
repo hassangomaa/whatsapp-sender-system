@@ -45,15 +45,7 @@ echo "==> Starting application services..."
 # shellcheck disable=SC2086
 docker compose $COMPOSE_FILES ${PROFILE:+--profile "$PROFILE"} up -d api worker web
 
-echo "==> Running database migrations..."
-# shellcheck disable=SC2086
-docker compose $COMPOSE_FILES exec -T api sh -c \
-  "cd /app && npm run db:push -w @whatsapp-sender/database"
-
-echo "==> Seeding plans (idempotent)..."
-# shellcheck disable=SC2086
-docker compose $COMPOSE_FILES exec -T api sh -c \
-  "cd /app && npm run seed -w @whatsapp-sender/database" || true
+bash "$ROOT/scripts/db-migrate.sh"
 
 echo "==> Health checks..."
 API_HEALTH="${NEXT_PUBLIC_API_URL:-http://localhost:3010}/health"
