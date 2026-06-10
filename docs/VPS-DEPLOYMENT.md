@@ -212,6 +212,25 @@ sudo nginx -t && sudo systemctl reload nginx
 # fix /etc/nginx/sites-available/altmiz, then re-enable
 ```
 
+### `address already in use` on port 3010/3011
+
+Another app on the VPS (e.g. arheb-backend or a local `npm start`) may already use those ports.
+
+Check:
+
+```bash
+sudo ss -tlnp | grep -E '3010|3011|3020|3021'
+```
+
+WhatsApp Sender uses **host ports 3020 (API) and 3021 (web)** by default on VPS. Add to `.env`:
+
+```env
+API_HOST_PORT=3020
+WEB_HOST_PORT=3021
+```
+
+Nginx proxies to `127.0.0.1:3020` and `127.0.0.1:3021` (see `nginx/whatsapp-sender.conf`).
+
 ### Correct deploy order on a fresh VPS
 
 1. `git pull` (get latest code)

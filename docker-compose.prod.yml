@@ -12,7 +12,7 @@ services:
 
   api:
     ports:
-      - "127.0.0.1:3010:3010"
+      - "127.0.0.1:${API_HOST_PORT:-3020}:3010"
     env_file: .env
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -41,7 +41,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_WEB_URL: ${NEXT_PUBLIC_WEB_URL}
     ports:
-      - "127.0.0.1:3011:3011"
+      - "127.0.0.1:${WEB_HOST_PORT:-3021}:3011"
     env_file: .env
     restart: unless-stopped
 

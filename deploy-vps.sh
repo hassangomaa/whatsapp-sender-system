@@ -19,6 +19,7 @@ source "$ROOT/scripts/load-env.sh"
 
 WEB_URL="${NEXT_PUBLIC_WEB_URL:-https://whatsapp.arheb.net}"
 API_URL="${NEXT_PUBLIC_API_URL:-https://api.whatsapp.arheb.net}"
+LOCAL_API_PORT="${API_HOST_PORT:-3020}"
 
 require_env() {
   if [ ! -f .env ]; then
@@ -97,7 +98,7 @@ cmd_full() {
   run_migrate_seed
 
   # Health via localhost (containers bind 127.0.0.1)
-  wait_api "http://127.0.0.1:3010/health"
+  wait_api "http://127.0.0.1:${LOCAL_API_PORT}/health"
 
   echo ""
   echo "╔══════════════════════════════════════════════════════════╗"
@@ -127,7 +128,7 @@ cmd_code() {
   compose up -d api worker web
   run_migrate_seed
 
-  wait_api "http://127.0.0.1:3010/health"
+  wait_api "http://127.0.0.1:${LOCAL_API_PORT}/health"
   echo "✅ Code deploy complete."
 }
 
@@ -142,11 +143,11 @@ cmd_status() {
   require_docker
   compose ps
   echo ""
-  if curl -sf "http://127.0.0.1:3010/health" 2>/dev/null; then
+  if curl -sf "http://127.0.0.1:${LOCAL_API_PORT}/health" 2>/dev/null; then
     echo ""
-    echo "Local health OK (127.0.0.1:3010)"
+    echo "Local health OK (127.0.0.1:${LOCAL_API_PORT})"
   else
-    echo "❌ Local API not reachable on 127.0.0.1:3010"
+    echo "❌ Local API not reachable on 127.0.0.1:${LOCAL_API_PORT}"
   fi
   if curl -sf "$API_URL/health" 2>/dev/null; then
     echo "Public health OK ($API_URL)"
