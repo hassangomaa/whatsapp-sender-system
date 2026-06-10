@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Enable whatsapp-sender nginx site + certbot SSL (non-interactive when possible).
+# Enable whatsapp-sender nginx + Let's Encrypt SSL for both subdomains.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 NGINX_SITE="whatsapp-sender"
+TARGET="/etc/nginx/sites-available/$NGINX_SITE"
+CERT_DIR="/etc/letsencrypt/live/whatsapp.arheb.net"
 DOMAINS=(whatsapp.arheb.net api.whatsapp.arheb.net)
+CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@arheb.net}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "❌ Run as root"
@@ -16,31 +19,53 @@ if ! command -v nginx >/dev/null 2>&1; then
   exit 0
 fi
 
-cp "$ROOT/nginx/whatsapp-sender.conf" "/etc/nginx/sites-available/$NGINX_SITE"
-ln -sf "/etc/nginx/sites-available/$NGINX_SITE" "/etc/nginx/sites-enabled/$NGINX_SITE"
+ln -sf "$TARGET" "/etc/nginx/sites-enabled/$NGINX_SITE"
 
-if ! nginx -t; then
-  echo "❌ nginx -t failed — fix other sites first (altmiz/zaedl)"
-  exit 1
-fi
-systemctl reload nginx
-echo "✅ Nginx site enabled: $NGINX_SITE"
+ensure_cert() {
+  if [ -f "$CERT_DIR/fullchain.pem" ]; then
+    if openssl x509 -in "$CERT_DIR/fullchain.pem" -noout -text 2>/dev/null | grep -q "api.whatsapp.arheb.net"; then
+      echo "✅ Certificate covers both subdomains"
+      return 0
+    fi
+    echo "==> Expanding certificate to include api.whatsapp.arheb.net..."
+    certbot certonly --nginx \
+      -d "${DOMAINS[0]}" -d "${DOMAINS[1]}" \
+      --non-interactive --agree-tos -m "$CERTBOT_EMAIL" \
+      --expand --cert-name whatsapp.arheb.net || true
+    return 0
+  fi
 
-if ! command -v certbot >/dev/null 2>&1; then
-  echo "⚠️  certbot not installed — HTTP only until SSL is configured"
-  exit 0
-fi
+  echo "==> Obtaining new certificate..."
+  cp "$ROOT/nginx/whatsapp-sender.conf" "$TARGET"
+  nginx -t
+  systemctl reload nginx
+  certbot certonly --nginx \
+    -d "${DOMAINS[0]}" -d "${DOMAINS[1]}" \
+    --non-interactive --agree-tos -m "$CERTBOT_EMAIL" \
+    --cert-name whatsapp.arheb.net
+}
 
-if certbot certificates 2>/dev/null | grep -q "whatsapp.arheb.net"; then
-  echo "✅ SSL cert already exists for whatsapp.arheb.net"
-  certbot renew --nginx --quiet 2>/dev/null || true
-  exit 0
-fi
+install_ssl_config() {
+  if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
+    echo "❌ Certificate missing at $CERT_DIR"
+    exit 1
+  fi
+  cp "$ROOT/nginx/whatsapp-sender.ssl.conf" "$TARGET"
+  nginx -t
+  systemctl reload nginx
+  echo "✅ SSL nginx config installed"
+}
 
-CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@arheb.net}"
-certbot --nginx \
-  -d "${DOMAINS[0]}" -d "${DOMAINS[1]}" \
-  --non-interactive --agree-tos \
-  -m "$CERTBOT_EMAIL" \
-  --redirect
-echo "✅ SSL certificates installed"
+ensure_cert
+install_ssl_config
+
+# Verify each host presents correct cert
+for host in "${DOMAINS[@]}"; do
+  subj=$(echo | openssl s_client -connect "$host:443" -servername "$host" 2>/dev/null \
+    | openssl x509 -noout -subject 2>/dev/null || echo "fail")
+  if echo "$subj" | grep -q "$host"; then
+    echo "✅ SSL OK: $host ($subj)"
+  else
+    echo "⚠️  SSL check failed for $host ($subj)"
+  fi
+done

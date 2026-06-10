@@ -65,10 +65,19 @@ run_migrate_seed() {
 
 setup_nginx_ssl() {
   if [ "$(id -u)" -eq 0 ]; then
-    bash "$ROOT/scripts/vps/setup-nginx.sh" || echo "⚠️  Nginx/SSL setup skipped (fix nginx -t on server)"
+    bash "$ROOT/scripts/vps/setup-nginx.sh"
   else
-    echo "⚠️  Run as root for nginx/SSL: sudo bash scripts/vps/setup-nginx.sh"
+    echo "⚠️  Run as root for nginx/SSL: sudo ./deploy-vps.sh ssl"
   fi
+}
+
+cmd_ssl() {
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "❌ Run: sudo ./deploy-vps.sh ssl"
+    exit 1
+  fi
+  bash "$ROOT/scripts/vps/setup-nginx.sh"
+  bash "$ROOT/scripts/vps/verify-production.sh"
 }
 
 cmd_full() {
@@ -95,11 +104,12 @@ cmd_full() {
   setup_nginx_ssl
 
   echo ""
-  echo "==> Smoke tests..."
-  if NEXT_PUBLIC_WEB_URL="$WEB_URL" NEXT_PUBLIC_API_URL="$API_URL" bash "$ROOT/scripts/smoke-all.sh"; then
-    echo "✅ All smoke tests passed"
+  echo "==> Production verify + smoke tests..."
+  if bash "$ROOT/scripts/vps/verify-production.sh" && \
+     NEXT_PUBLIC_WEB_URL="$WEB_URL" NEXT_PUBLIC_API_URL="$API_URL" bash "$ROOT/scripts/smoke-all.sh"; then
+    echo "✅ All checks passed"
   else
-    echo "⚠️  Some smoke tests failed — check logs: sudo ./deploy-vps.sh logs"
+    echo "⚠️  Some checks failed — try: sudo ./deploy-vps.sh ssl"
   fi
 
   echo ""
@@ -174,6 +184,7 @@ Commands:
   full     Zero-config deploy (env + docker + db + nginx/ssl + smoke)
   code     git pull + rebuild + migrate
   migrate  DB push + seed only (fix missing tables)
+  ssl      Fix/reinstall HTTPS nginx + cert verify
   test     Smoke tests
   status   Containers + health
   logs     Tail api/worker/web
@@ -187,6 +198,7 @@ case "$CMD" in
   full)    cmd_full ;;
   code)    cmd_code ;;
   migrate) cmd_migrate ;;
+  ssl)     cmd_ssl ;;
   test)    cmd_test ;;
   status)  cmd_status ;;
   logs)    cmd_logs ;;
