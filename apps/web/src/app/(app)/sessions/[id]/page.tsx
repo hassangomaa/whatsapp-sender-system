@@ -214,6 +214,7 @@ export default function SessionDetailPage() {
                 setInitLoading(true);
                 setPairing(true);
                 pairingRef.current = true;
+                connectingRef.current = false;
                 setConnecting(false);
                 setQr(null);
                 try {
