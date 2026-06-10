@@ -1,0 +1,37 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
+import { AuthModule } from './auth/auth.module';
+import { SessionsModule } from './sessions/sessions.module';
+import { PublicApiModule } from './public-api/public-api.module';
+import { MessagesModule } from './messages/messages.module';
+import { StatusModule } from './status/status.module';
+import { PackagesModule } from './packages/packages.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { CommonModule } from './common/common.module';
+import { HealthController } from './health.controller';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    BullModule.forRoot({
+      connection: {
+        url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+      },
+    }),
+    PrismaModule,
+    CommonModule,
+    AuthModule,
+    SessionsModule,
+    PublicApiModule,
+    MessagesModule,
+    StatusModule,
+    PackagesModule,
+    CampaignsModule,
+    DashboardModule,
+  ],
+  controllers: [HealthController],
+})
+export class AppModule {}

@@ -1,0 +1,24 @@
+{
+  "name": "whatsapp-sender-system",
+  "version": "1.0.0",
+  "description": "Multi-tenant WhatsApp messaging SaaS",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,worker,web -c blue,magenta,green \"npm run dev -w @whatsapp-sender/api\" \"npm run dev -w @whatsapp-sender/worker\" \"npm run dev -w @whatsapp-sender/web\"",
+    "build": "npm run build -w @whatsapp-sender/contracts && npm run build -w @whatsapp-sender/database && npm run build -w @whatsapp-sender/api && npm run build -w @whatsapp-sender/worker && npm run build -w @whatsapp-sender/web",
+    "db:generate": "npm run generate -w @whatsapp-sender/database",
+    "db:migrate": "npm run migrate -w @whatsapp-sender/database",
+    "db:push": "npm run push -w @whatsapp-sender/database",
+    "test": "npm run test -w @whatsapp-sender/api",
+    "test:contract": "npm run test:contract -w @whatsapp-sender/api",
+    "smoke:public-api": "bash scripts/smoke-public-api.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}

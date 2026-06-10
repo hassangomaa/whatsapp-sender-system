@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+.env
+.env.local
+*.log
+coverage/
+.turbo/
+apps/worker/sessions/
+legacy/selenium/browser-profile/
+.DS_Store
+*.tsbuildinfo

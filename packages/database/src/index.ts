@@ -1,0 +1,33 @@
+export {
+  Prisma,
+  PrismaClient,
+  SessionStatus,
+  MessageStatus,
+  CampaignStatus,
+  CampaignRecipientStatus,
+} from '@prisma/client';
+export type {
+  User,
+  Workspace,
+  WhatsappSession,
+  Message,
+  Plan,
+  Subscription,
+  UsageCounter,
+  Campaign,
+  CampaignRecipient,
+} from '@prisma/client';
+
+import { PrismaClient } from '@prisma/client';
+
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+  });
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
