@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api, getToken } from '@/lib/api';
+import { PageHeader } from '@/components/PageHeader';
+import { LoadingState } from '@/components/LoadingState';
+import { CopyButton } from '@/components/CopyButton';
+import { Button } from '@/components/ui/Button';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3010';
 
@@ -25,6 +29,7 @@ export default function SessionDetailPage() {
   const [qr, setQr] = useState<string | null>(null);
   const [scopes, setScopes] = useState({ send: true, media: true, webhook: false });
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [initLoading, setInitLoading] = useState(false);
 
   const load = () => api<Session>(`/api/v1/sessions/${id}`).then((s) => {
     setSession(s);
@@ -40,11 +45,6 @@ export default function SessionDetailPage() {
   useEffect(() => {
     if (!id) return;
     const token = getToken();
-    const es = new EventSource(`${API_URL}/api/v1/sessions/${id}/qr/stream`, {
-      withCredentials: false,
-    } as EventSourceInit);
-
-    // EventSource doesn't support Authorization header — use fetch stream fallback
     let cancelled = false;
 
     async function streamQr() {
@@ -71,64 +71,77 @@ export default function SessionDetailPage() {
     }
 
     streamQr().catch(console.error);
-    return () => {
-      cancelled = true;
-      es.close();
-    };
+    return () => { cancelled = true; };
   }, [id]);
 
-  if (!session) return <div>Loading session...</div>;
+  if (!session) return <LoadingState label="Loading session..." />;
 
   const sendUrl = `${API_URL}/api/v1/whatsapp/public/message/send`;
-  const mediaUrl = `${API_URL}/api/v1/whatsapp/public/media/send`;
+  const curlExample = `curl -X POST '${sendUrl}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'x-api-key: sk_live_<your_key>' \\
+  -H 'Idempotency-Key: unique-key-1' \\
+  -d '{"phoneNumber":"201277785111","content":"Hello"}'`;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">{session.name}</h1>
-          <p className="text-sm text-[var(--muted)]">{session.phone ?? '—'} · {session.apiKeyPrefix}…</p>
-        </div>
-        <div className="flex gap-2">
-          <button type="button" className="btn-primary" onClick={() => api(`/api/v1/sessions/${id}/init`, { method: 'POST' }).then(load)}>
-            Init / QR
-          </button>
-          <button type="button" className="btn-secondary" onClick={() => api(`/api/v1/sessions/${id}/disconnect`, { method: 'POST' }).then(load)}>
-            Disconnect
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title={session.name}
+        description={`${session.phone ?? 'No phone'} · ${session.apiKeyPrefix}…`}
+        actions={
+          <>
+            <Button
+              loading={initLoading}
+              onClick={async () => {
+                setInitLoading(true);
+                await api(`/api/v1/sessions/${id}/init`, { method: 'POST' }).then(load).finally(() => setInitLoading(false));
+              }}
+            >
+              Init / QR
+            </Button>
+            <Button variant="secondary" onClick={() => api(`/api/v1/sessions/${id}/disconnect`, { method: 'POST' }).then(load)}>
+              Disconnect
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid md:grid-cols-3 gap-4">
         <div className="card p-5">
-          <h2 className="font-semibold mb-2">Connection status</h2>
-          <span className={session.status === 'connected' ? 'badge-green' : 'badge-gray'}>{session.status}</span>
-          <p className="text-sm mt-3">Connected: {session.status === 'connected' ? 'Yes' : 'No'}</p>
-          <p className="text-sm">Can send messages: {session.canSendMessages ? 'Yes' : 'No'}</p>
+          <h2 className="font-semibold mb-2">Connection</h2>
+          <span className={session.status === 'connected' ? 'badge-green' : session.status === 'qr_pending' ? 'badge-gray' : 'badge-red'}>
+            {session.status.replace('_', ' ')}
+          </span>
+          <ul className="text-sm mt-4 space-y-2 text-[var(--muted)]">
+            <li>Connected: {session.status === 'connected' ? 'Yes' : 'No'}</li>
+            <li>Can send: {session.canSendMessages ? 'Yes' : 'No'}</li>
+            <li className="font-mono text-xs break-all">ID: {session.id}</li>
+          </ul>
         </div>
 
-        <div className="card p-5 md:col-span-2">
-          <h2 className="font-semibold mb-2">QR code</h2>
+        <div className="card p-5 md:col-span-2 flex flex-col items-center justify-center min-h-[220px]">
+          <h2 className="font-semibold mb-3 self-start">QR code</h2>
           {session.status === 'connected' ? (
-            <p className="text-sm text-[var(--muted)]">Session is already connected, QR code not needed.</p>
+            <p className="text-sm text-[var(--muted)]">Session connected — QR not needed.</p>
           ) : qr ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={qr} alt="WhatsApp QR code" className="w-48 h-48 rounded-xl border border-[var(--border)]" />
+            <img src={qr} alt="WhatsApp QR code" className="w-48 h-48 sm:w-56 sm:h-56 rounded-xl border border-[var(--border)]" />
           ) : (
-            <p className="text-sm text-[var(--muted)]">Click Init / QR to generate a code, then scan with WhatsApp.</p>
+            <p className="text-sm text-[var(--muted)] text-center">Click Init / QR, then scan with WhatsApp on your phone.</p>
           )}
         </div>
       </div>
 
       <div className="card p-5">
-        <h2 className="font-semibold mb-3">Public API scopes</h2>
+        <h2 className="font-semibold mb-3">API scopes</h2>
         <div className="flex gap-4 flex-wrap mb-4">
           {(['send', 'media', 'webhook'] as const).map((key) => (
-            <label key={key} className="flex items-center gap-2 text-sm">
+            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
               <input
                 type="checkbox"
                 checked={scopes[key]}
                 onChange={(e) => setScopes({ ...scopes, [key]: e.target.checked })}
+                className="rounded"
               />
               {key}
             </label>
@@ -137,12 +150,11 @@ export default function SessionDetailPage() {
         <input
           value={webhookUrl}
           onChange={(e) => setWebhookUrl(e.target.value)}
-          placeholder="Webhook URL"
-          className="w-full rounded-xl border border-[var(--border)] px-3 py-2 bg-transparent mb-3"
+          placeholder="Webhook URL (optional)"
+          className="input-field mb-3"
         />
-        <button
-          type="button"
-          className="btn-secondary"
+        <Button
+          variant="secondary"
           onClick={() =>
             api(`/api/v1/sessions/${id}/scopes`, {
               method: 'PATCH',
@@ -151,25 +163,15 @@ export default function SessionDetailPage() {
           }
         >
           Save scopes
-        </button>
+        </Button>
       </div>
 
       <div className="card p-5">
-        <h2 className="font-semibold mb-2">Public API documentation</h2>
-        <p className="text-sm text-[var(--muted)] mb-2">Session ID: <code>{session.id}</code></p>
-        <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{`curl -X POST '${sendUrl}' \\
-  -H 'Content-Type: application/json' \\
-  -H 'x-api-key: sk_live_<your_key>' \\
-  -H 'Idempotency-Key: unique-key-1' \\
-  -d '{"phoneNumber":"201277785111","content":"Hello"}'
-
-curl -X POST '${mediaUrl}' \\
-  -H 'x-api-key: sk_live_<your_key>' \\
-  -H 'Idempotency-Key: unique-key-2' \\
-  -F 'phoneNumber=201277785111' \\
-  -F 'mediaType=image' \\
-  -F 'caption=Hello' \\
-  -F 'file=@/path/to/image.jpg'`}</pre>
+        <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
+          <h2 className="font-semibold">API example</h2>
+          <CopyButton text={curlExample} label="Copy curl" />
+        </div>
+        <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{curlExample}</pre>
       </div>
     </div>
   );
