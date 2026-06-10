@@ -59,13 +59,19 @@ install_ssl_config() {
 ensure_cert
 install_ssl_config
 
-# Verify each host presents correct cert
+# Verify each host presents correct cert (retry — nginx reload can lag briefly)
+sleep 2
 for host in "${DOMAINS[@]}"; do
-  subj=$(echo | openssl s_client -connect "$host:443" -servername "$host" 2>/dev/null \
-    | openssl x509 -noout -subject 2>/dev/null || echo "fail")
-  if echo "$subj" | grep -q "$host"; then
+  subj="fail"
+  for _ in 1 2 3 4 5; do
+    subj=$(echo | openssl s_client -connect "$host:443" -servername "$host" 2>/dev/null \
+      | openssl x509 -noout -subject 2>/dev/null || echo "fail")
+    echo "$subj" | grep -q "whatsapp.arheb.net" && break
+    sleep 1
+  done
+  if echo "$subj" | grep -q "whatsapp.arheb.net"; then
     echo "✅ SSL OK: $host ($subj)"
   else
-    echo "⚠️  SSL check failed for $host ($subj)"
+    echo "⚠️  SSL check failed for $host ($subj) — run: curl -I https://$host"
   fi
 done

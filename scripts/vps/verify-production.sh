@@ -14,7 +14,17 @@ echo "=== Local API (Docker) ==="
 curl -sf "$LOCAL_API/health" && echo "" || { echo "❌ Local API down at $LOCAL_API"; exit 1; }
 
 echo "=== HTTPS health ==="
-curl -sf "$API/health" && echo "" || { echo "❌ HTTPS API failed: $API/health"; exit 1; }
+ok=0
+for _ in 1 2 3 4 5; do
+  if curl -sf "$API/health" >/dev/null 2>&1; then ok=1; break; fi
+  sleep 1
+done
+if [ "$ok" -eq 1 ]; then
+  curl -sf "$API/health" && echo ""
+else
+  echo "❌ HTTPS API failed: $API/health"
+  exit 1
+fi
 
 echo "=== SSL certificates ==="
 for host in whatsapp.arheb.net api.whatsapp.arheb.net; do
