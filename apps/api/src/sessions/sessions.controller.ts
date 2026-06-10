@@ -65,20 +65,29 @@ export class SessionsController {
     @Param('id') id: string,
     @Res() res: Response,
   ) {
-    await this.sessions.get(user.workspaceId, id);
+    const session = await this.sessions.get(user.workspaceId, id);
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    const channel = REDIS_CHANNELS.sessionEvent(id);
-    const subscriber = this.redis.duplicate();
-    await subscriber.subscribe(channel);
-
     const send = (data: object) => {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
+
+    send({
+      type: 'snapshot',
+      sessionId: id,
+      status: session.status,
+      qr: session.qrCode,
+      phone: session.phone,
+      mock: process.env.BAILEYS_MOCK === '1',
+    });
+
+    const channel = REDIS_CHANNELS.sessionEvent(id);
+    const subscriber = this.redis.duplicate();
+    await subscriber.subscribe(channel);
 
     subscriber.on('message', (_ch, message) => {
       send(JSON.parse(message));

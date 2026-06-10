@@ -14,8 +14,9 @@ export class MessagesController {
   list(
     @CurrentUser() user: { workspaceId: string },
     @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
   ) {
-    return this.messages.list(user.workspaceId, limit ? Number(limit) : 50);
+    return this.messages.list(user.workspaceId, limit ? Number(limit) : 50, cursor);
   }
 
   @Post()

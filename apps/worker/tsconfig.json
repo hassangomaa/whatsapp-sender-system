@@ -2,15 +2,12 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "commonjs",
-    "outDir": "dist",
+    "rootDir": "./src",
+    "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "paths": {
-      "@whatsapp-sender/database": ["../../packages/database/src/index.ts"],
-      "@whatsapp-sender/contracts": ["../../packages/contracts/src/index.ts"]
-    }
+    "resolveJsonModule": true
   },
   "include": ["src/**/*"]
 }

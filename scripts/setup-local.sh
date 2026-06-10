@@ -33,7 +33,9 @@ if [ ! -f .env ]; then
   # Homebrew defaults (not Docker ports)
   sed -i '' 's|localhost:5433|localhost:5432|g' .env 2>/dev/null || sed -i 's|localhost:5433|localhost:5432|g' .env
   sed -i '' 's|localhost:6380|localhost:6379|g' .env 2>/dev/null || sed -i 's|localhost:6380|localhost:6379|g' .env
-  echo "BAILEYS_MOCK=1" >> .env
+  if ! grep -q '^BAILEYS_MOCK=' .env; then
+    echo "BAILEYS_MOCK=0" >> .env
+  fi
 fi
 
 export $(grep -v '^#' .env | xargs)
@@ -45,6 +47,14 @@ npm run seed -w @whatsapp-sender/database
 
 echo ""
 echo "✅ Setup complete!"
-echo "   Run: BAILEYS_MOCK=1 npm run dev"
-echo "   Dashboard: http://localhost:3011"
-echo "   API:       http://localhost:3010"
+echo ""
+echo "   Production (real WhatsApp):"
+echo "     npm run build && npm run start"
+echo "     ↑ keep this terminal open while using the app"
+echo ""
+echo "   Development (hot reload):"
+echo "     npm run dev"
+echo ""
+echo "   Dashboard:  http://localhost:3011"
+echo "   API health: http://localhost:3010/health"
+echo "   Test all:   npm run smoke:all   (in another terminal)"

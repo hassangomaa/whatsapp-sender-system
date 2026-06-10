@@ -8,16 +8,30 @@ import * as fs from 'fs';
 import * as path from 'path';
 import QRCode from 'qrcode';
 import { prisma, SessionStatus } from '@whatsapp-sender/database';
+import { WHATSAPP_QR_REFRESH_SECONDS } from '@whatsapp-sender/contracts';
 import { publishSessionEvent } from './redis';
 
 const sessionsDir = path.join(process.cwd(), 'sessions');
+const MOCK_AUTO_CONNECT_MS = Number(process.env.BAILEYS_MOCK_CONNECT_MS ?? 3000);
+
+function qrExpiresAt() {
+  return Date.now() + WHATSAPP_QR_REFRESH_SECONDS * 1000;
+}
 
 export class SessionManager {
   private sockets = new Map<string, ReturnType<typeof makeWASocket>>();
+  private mockTimers = new Map<string, { connect: NodeJS.Timeout; refresh: NodeJS.Timeout }>();
 
-  async initSession(sessionId: string) {
+  async initSession(sessionId: string, opts: { restore?: boolean } = {}) {
+    this.clearMockTimer(sessionId);
+    await this.endSocket(sessionId);
+
     if (process.env.BAILEYS_MOCK === '1') {
       return this.initMockSession(sessionId);
+    }
+
+    if (!opts.restore) {
+      await this.clearAuthState(sessionId);
     }
 
     const sessionPath = path.join(sessionsDir, sessionId);
@@ -30,10 +44,11 @@ export class SessionManager {
       version,
       auth: state,
       printQRInTerminal: false,
+      /** Match WhatsApp Web QR refresh cadence. */
+      qrTimeout: WHATSAPP_QR_REFRESH_SECONDS * 1000,
     });
 
     this.sockets.set(sessionId, sock);
-
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
@@ -41,15 +56,24 @@ export class SessionManager {
 
       if (qr) {
         const dataUrl = await QRCode.toDataURL(qr);
+        const expiresAt = qrExpiresAt();
         await prisma.whatsappSession.update({
           where: { id: sessionId },
           data: { qrCode: dataUrl, status: SessionStatus.QR_PENDING },
         });
-        await publishSessionEvent(sessionId, { type: 'qr', sessionId, qr: dataUrl });
+        await publishSessionEvent(sessionId, {
+          type: 'qr',
+          sessionId,
+          qr: dataUrl,
+          qrExpiresAt: expiresAt,
+          status: 'qr_pending',
+        });
       }
 
       if (connection === 'open') {
         const phone = sock.user?.id?.split(':')[0] ?? null;
+        if (!phone) return;
+
         await prisma.whatsappSession.update({
           where: { id: sessionId },
           data: {
@@ -62,39 +86,63 @@ export class SessionManager {
         await publishSessionEvent(sessionId, {
           type: 'connected',
           sessionId,
-          phone: phone ?? undefined,
+          phone,
+          status: 'connected',
+          mock: false,
         });
       }
 
       if (connection === 'close') {
         const code = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
-        const shouldReconnect = code !== DisconnectReason.loggedOut;
+        const loggedOut = code === DisconnectReason.loggedOut;
+        const shouldReconnect = !loggedOut;
+
         await prisma.whatsappSession.update({
           where: { id: sessionId },
-          data: { status: SessionStatus.DISCONNECTED, qrCode: null },
+          data: {
+            status: SessionStatus.DISCONNECTED,
+            qrCode: null,
+            ...(loggedOut ? { phone: null } : {}),
+          },
         });
         await publishSessionEvent(sessionId, {
           type: 'disconnected',
           sessionId,
-          message: shouldReconnect ? 'Reconnecting...' : 'Logged out',
+          status: 'disconnected',
+          message: shouldReconnect ? 'Connection lost — generating new QR…' : 'Logged out from WhatsApp',
         });
-        this.sockets.delete(sessionId);
-        if (shouldReconnect) {
-          setTimeout(() => this.initSession(sessionId), 5000);
+        await this.endSocket(sessionId);
+
+        if (shouldReconnect && !opts.restore) {
+          setTimeout(() => this.initSession(sessionId), 2000);
         }
       }
     });
   }
 
   async disconnectSession(sessionId: string) {
+    this.clearMockTimer(sessionId);
     const sock = this.sockets.get(sessionId);
     if (sock) {
-      await sock.logout();
+      try {
+        await sock.logout();
+      } catch {
+        try {
+          sock.end(undefined);
+        } catch {}
+      }
       this.sockets.delete(sessionId);
     }
+    await this.clearAuthState(sessionId);
     await prisma.whatsappSession.update({
       where: { id: sessionId },
       data: { status: SessionStatus.DISCONNECTED, qrCode: null, phone: null },
+    });
+    await publishSessionEvent(sessionId, {
+      type: 'disconnected',
+      sessionId,
+      status: 'disconnected',
+      message: 'Session disconnected',
     });
   }
 
@@ -104,7 +152,7 @@ export class SessionManager {
     }
 
     const sock = this.sockets.get(sessionId);
-    if (!sock) {
+    if (!sock?.user) {
       throw new Error('Session not connected');
     }
     const jid = `${phoneNumber}@s.whatsapp.net`;
@@ -123,11 +171,10 @@ export class SessionManager {
     }
 
     const sock = this.sockets.get(sessionId);
-    if (!sock) {
+    if (!sock?.user) {
       throw new Error('Session not connected');
     }
     const jid = `${phoneNumber}@s.whatsapp.net`;
-    // Simplified media — image URL or base64 buffer
     if (mediaType === 'image' && opts.mediaUrl) {
       const result = await sock.sendMessage(jid, {
         image: { url: opts.mediaUrl },
@@ -139,14 +186,31 @@ export class SessionManager {
   }
 
   private async initMockSession(sessionId: string) {
-    const fakeQr = await QRCode.toDataURL(`mock-session:${sessionId}`);
-    await prisma.whatsappSession.update({
-      where: { id: sessionId },
-      data: { qrCode: fakeQr, status: SessionStatus.QR_PENDING },
-    });
-    await publishSessionEvent(sessionId, { type: 'qr', sessionId, qr: fakeQr });
+    const publishMockQr = async () => {
+      const fakeQr = await QRCode.toDataURL(`mock-session:${sessionId}:${Date.now()}`);
+      const expiresAt = qrExpiresAt();
+      await prisma.whatsappSession.update({
+        where: { id: sessionId },
+        data: { qrCode: fakeQr, status: SessionStatus.QR_PENDING },
+      });
+      await publishSessionEvent(sessionId, {
+        type: 'qr',
+        sessionId,
+        qr: fakeQr,
+        qrExpiresAt: expiresAt,
+        status: 'qr_pending',
+        mock: true,
+      });
+    };
 
-    setTimeout(async () => {
+    await publishMockQr();
+
+    const refreshInterval = setInterval(() => {
+      publishMockQr().catch(console.error);
+    }, WHATSAPP_QR_REFRESH_SECONDS * 1000);
+
+    const connectTimer = setTimeout(async () => {
+      clearInterval(refreshInterval);
       await prisma.whatsappSession.update({
         where: { id: sessionId },
         data: {
@@ -160,8 +224,13 @@ export class SessionManager {
         type: 'connected',
         sessionId,
         phone: '201200000000',
+        status: 'connected',
+        mock: true,
       });
-    }, 3000);
+      this.mockTimers.delete(sessionId);
+    }, MOCK_AUTO_CONNECT_MS);
+
+    this.mockTimers.set(sessionId, { connect: connectTimer, refresh: refreshInterval });
   }
 
   async restoreConnectedSessions() {
@@ -169,7 +238,7 @@ export class SessionManager {
       where: { status: SessionStatus.CONNECTED },
     });
     for (const session of sessions) {
-      await this.initSession(session.id).catch((err) => {
+      await this.initSession(session.id, { restore: true }).catch((err) => {
         console.error(`Failed to restore session ${session.id}`, err);
       });
     }
@@ -178,20 +247,50 @@ export class SessionManager {
   async pingSessions() {
     for (const [sessionId, sock] of this.sockets) {
       if (sock.user) {
-        await prisma.whatsappSession.update({
-          where: { id: sessionId },
-          data: { lastConnectedAt: new Date() },
-        }).catch(() => {});
+        await prisma.whatsappSession
+          .update({
+            where: { id: sessionId },
+            data: { lastConnectedAt: new Date() },
+          })
+          .catch(() => {});
       }
     }
   }
 
   async shutdown() {
+    for (const sessionId of this.mockTimers.keys()) {
+      this.clearMockTimer(sessionId);
+    }
     for (const [sessionId, sock] of this.sockets) {
       try {
         sock.end(undefined);
       } catch {}
       this.sockets.delete(sessionId);
+    }
+  }
+
+  private clearMockTimer(sessionId: string) {
+    const timers = this.mockTimers.get(sessionId);
+    if (timers) {
+      clearTimeout(timers.connect);
+      clearInterval(timers.refresh);
+      this.mockTimers.delete(sessionId);
+    }
+  }
+
+  private async endSocket(sessionId: string) {
+    const sock = this.sockets.get(sessionId);
+    if (!sock) return;
+    try {
+      sock.end(undefined);
+    } catch {}
+    this.sockets.delete(sessionId);
+  }
+
+  private async clearAuthState(sessionId: string) {
+    const sessionPath = path.join(sessionsDir, sessionId);
+    if (fs.existsSync(sessionPath)) {
+      fs.rmSync(sessionPath, { recursive: true, force: true });
     }
   }
 }

@@ -4,6 +4,7 @@ import {
   QUEUES,
   SendMediaJob,
   SendMessageJob,
+  WebhookDeliverJob,
 } from '@whatsapp-sender/contracts';
 import {
   CampaignRecipientStatus,
@@ -14,9 +15,67 @@ import {
 } from '@whatsapp-sender/database';
 import { sessionManager } from './session-manager';
 import { waitForSessionRateLimit } from './rate-limiter';
+import { scheduleWebhook } from './webhook-queue';
 
 const connection = { url: process.env.REDIS_URL ?? 'redis://localhost:6379' };
 const DEFAULT_RATE_MS = Number(process.env.SEND_RATE_LIMIT_MS ?? 3000);
+
+async function deliverWebhook(job: WebhookDeliverJob) {
+  const secret = process.env.WEBHOOK_SIGNING_SECRET ?? 'dev-webhook-secret';
+  const signature = createHmac('sha256', secret).update(JSON.stringify(job.payload)).digest('hex');
+
+  let deliveryId = job.deliveryId;
+
+  if (!deliveryId) {
+    const created = await prisma.webhookDelivery.create({
+      data: {
+        workspaceId: job.workspaceId,
+        sessionId: job.sessionId ?? null,
+        messageId: job.messageId ?? null,
+        event: job.event,
+        url: job.url,
+        payload: job.payload as Prisma.InputJsonValue,
+        success: false,
+        attempts: 0,
+      },
+    });
+    deliveryId = created.id;
+  }
+
+  await prisma.webhookDelivery.update({
+    where: { id: deliveryId },
+    data: { attempts: { increment: 1 } },
+  });
+
+  try {
+    const res = await fetch(job.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Webhook-Signature': signature,
+      },
+      body: JSON.stringify(job.payload),
+    });
+
+    await prisma.webhookDelivery.update({
+      where: { id: deliveryId },
+      data: {
+        statusCode: res.status,
+        success: res.ok,
+        lastError: res.ok ? null : `HTTP ${res.status}`,
+      },
+    });
+  } catch (err) {
+    await prisma.webhookDelivery.update({
+      where: { id: deliveryId },
+      data: {
+        success: false,
+        lastError: err instanceof Error ? err.message : 'unknown',
+      },
+    });
+    throw err;
+  }
+}
 
 async function markMessageSent(messageId: string, externalId?: string) {
   const message = await prisma.message.update({
@@ -31,7 +90,7 @@ async function markMessageSent(messageId: string, externalId?: string) {
   });
 
   if (message.session.webhookUrl && message.session.scopeWebhook) {
-    await enqueueWebhook(message.session.webhookUrl, message.workspaceId, message.sessionId, message.id, {
+    await scheduleWebhook(message.session.webhookUrl, message.workspaceId, message.sessionId, message.id, {
       event: 'message.sent',
       messageId: message.id,
       phoneNumber: message.phoneNumber,
@@ -48,59 +107,10 @@ async function markMessageFailed(messageId: string, error: string) {
   });
 
   if (message.session.webhookUrl && message.session.scopeWebhook) {
-    await enqueueWebhook(message.session.webhookUrl, message.workspaceId, message.sessionId, message.id, {
+    await scheduleWebhook(message.session.webhookUrl, message.workspaceId, message.sessionId, message.id, {
       event: 'message.failed',
       messageId: message.id,
       error,
-    });
-  }
-}
-
-async function enqueueWebhook(
-  url: string,
-  workspaceId: string,
-  sessionId: string,
-  messageId: string,
-  payload: Record<string, unknown>,
-) {
-  const secret = process.env.WEBHOOK_SIGNING_SECRET ?? 'dev-webhook-secret';
-  const signature = createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Webhook-Signature': signature,
-      },
-      body: JSON.stringify(payload),
-    });
-    await prisma.webhookDelivery.create({
-      data: {
-        workspaceId,
-        sessionId,
-        messageId,
-        event: String(payload.event),
-        url,
-        payload: payload as Prisma.InputJsonValue,
-        statusCode: res.status,
-        success: res.ok,
-        attempts: 1,
-      },
-    });
-  } catch (err) {
-    await prisma.webhookDelivery.create({
-      data: {
-        workspaceId,
-        sessionId,
-        messageId,
-        event: String(payload.event),
-        url,
-        payload: payload as Prisma.InputJsonValue,
-        success: false,
-        attempts: 1,
-        lastError: err instanceof Error ? err.message : 'unknown',
-      },
     });
   }
 }
@@ -120,6 +130,14 @@ export function startWorkers() {
       await sessionManager.disconnectSession(job.data.sessionId);
     },
     { connection },
+  );
+
+  new Worker(
+    QUEUES.WEBHOOK_DELIVER,
+    async (job: Job<WebhookDeliverJob>) => {
+      await deliverWebhook(job.data);
+    },
+    { connection, concurrency: 3 },
   );
 
   new Worker(
@@ -188,6 +206,7 @@ export function startWorkers() {
         });
 
         try {
+          await waitForSessionRateLimit(campaign.sessionId, DEFAULT_RATE_MS);
           const result = await sessionManager.sendText(
             campaign.sessionId,
             recipient.phoneNumber,

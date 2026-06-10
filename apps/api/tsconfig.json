@@ -13,11 +13,7 @@
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
-    "esModuleInterop": true,
-    "paths": {
-      "@whatsapp-sender/database": ["../../packages/database/src/index.ts"],
-      "@whatsapp-sender/contracts": ["../../packages/contracts/src/index.ts"]
-    }
+    "esModuleInterop": true
   },
   "include": ["src/**/*"]
 }

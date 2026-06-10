@@ -84,6 +84,10 @@ Contract tests: `apps/api/src/public-api/public-api.contract.spec.ts`
 6. **Local setup** — `scripts/setup-local.sh` (Homebrew postgres/redis)
 7. **Tests** — usage service unit tests + contract tests
 8. **GitHub** — `hassangomaa/whatsapp-sender-system`
+9. **Webhook delivery UI** — `/webhooks` log, filter, retry, test payload
+10. **Settings API** — profile, workspace name, default webhook URL
+11. **Dashboard v2** — quota bars, recent activity, webhook health, 30s polling
+12. **UI polish** — toasts, confirm dialogs, empty states, mobile-safe tables
 
 ## Future roadmap
 

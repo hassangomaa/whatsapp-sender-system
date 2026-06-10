@@ -8,14 +8,23 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "concurrently -n api,worker,web -c blue,magenta,green \"npm run dev -w @whatsapp-sender/api\" \"npm run dev -w @whatsapp-sender/worker\" \"npm run dev -w @whatsapp-sender/web\"",
+    "dev": "bash scripts/dev.sh",
+    "start": "bash scripts/start.sh",
+    "prod": "bash scripts/prod.sh",
+    "clean": "bash scripts/clean.sh",
+    "dev:raw": "concurrently -n api,worker,web -c blue,magenta,green \"npm run dev -w @whatsapp-sender/api\" \"npm run dev -w @whatsapp-sender/worker\" \"npm run dev -w @whatsapp-sender/web\"",
     "build": "npm run build -w @whatsapp-sender/contracts && npm run build -w @whatsapp-sender/database && npm run build -w @whatsapp-sender/api && npm run build -w @whatsapp-sender/worker && npm run build -w @whatsapp-sender/web",
     "db:generate": "npm run generate -w @whatsapp-sender/database",
     "db:migrate": "npm run migrate -w @whatsapp-sender/database",
     "db:push": "npm run push -w @whatsapp-sender/database",
     "test": "npm run test -w @whatsapp-sender/api",
     "test:contract": "npm run test:contract -w @whatsapp-sender/api",
-    "smoke:public-api": "bash scripts/smoke-public-api.sh"
+    "test:e2e": "npm run test:e2e -w @whatsapp-sender/web",
+    "smoke:public-api": "bash scripts/smoke-public-api.sh",
+    "smoke:all": "bash scripts/smoke-all.sh",
+    "verify": "bash scripts/verify.sh",
+    "deploy": "bash scripts/deploy.sh",
+    "deploy:vps": "sudo ./deploy-vps.sh code"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

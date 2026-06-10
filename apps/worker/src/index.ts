@@ -1,3 +1,4 @@
+import './env';
 import { prisma } from '@whatsapp-sender/database';
 import { sessionManager } from './session-manager';
 import { startWorkers } from './processors';

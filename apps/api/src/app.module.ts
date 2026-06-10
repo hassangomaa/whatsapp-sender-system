@@ -9,6 +9,8 @@ import { StatusModule } from './status/status.module';
 import { PackagesModule } from './packages/packages.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { SettingsModule } from './settings/settings.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { HealthController } from './health.controller';
@@ -31,6 +33,8 @@ import { HealthController } from './health.controller';
     PackagesModule,
     CampaignsModule,
     DashboardModule,
+    WebhooksModule,
+    SettingsModule,
   ],
   controllers: [HealthController],
 })

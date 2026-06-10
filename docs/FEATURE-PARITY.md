@@ -26,3 +26,7 @@
 | Per-session rate limit | Done |
 | Responsive UI + docs page | Done |
 | Local setup script (Homebrew) | Done |
+| Webhook delivery log UI + retry/test | Done |
+| Settings API (profile, workspace, default webhook) | Done |
+| Dashboard activity feed + quota bars | Done |
+| Toast/confirm/empty states (UI polish) | Done |

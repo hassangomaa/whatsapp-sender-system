@@ -1,30 +1,93 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { authApi } from '@/lib/api';
+import { FormEvent, useEffect, useState } from 'react';
+import { api } from '@/lib/api';
+import { PageHeader } from '@/components/PageHeader';
+import { LoadingState } from '@/components/LoadingState';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { useToast } from '@/components/Toast';
+
+type Settings = {
+  user: { name: string | null; email: string };
+  workspace: { name: string; defaultWebhookUrl: string | null };
+};
 
 export default function SettingsPage() {
-  const [profile, setProfile] = useState<{ user: { name: string | null; email: string }; workspace: { name: string } } | null>(null);
+  const { success, error: toastError } = useToast();
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [name, setName] = useState('');
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [defaultWebhookUrl, setDefaultWebhookUrl] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    authApi.me().then(setProfile).catch(console.error);
-  }, []);
+    api<Settings>('/api/v1/settings')
+      .then((s) => {
+        setSettings(s);
+        setName(s.user.name ?? '');
+        setWorkspaceName(s.workspace.name);
+        setDefaultWebhookUrl(s.workspace.defaultWebhookUrl ?? '');
+      })
+      .catch((err) => toastError(err instanceof Error ? err.message : 'Failed to load'))
+      .finally(() => setLoading(false));
+  }, [toastError]);
 
-  if (!profile) return <div>Loading settings...</div>;
+  async function onSave(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const updated = await api<Settings>('/api/v1/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: name || undefined,
+          workspaceName,
+          defaultWebhookUrl: defaultWebhookUrl || null,
+        }),
+      });
+      setSettings(updated);
+      success('Settings saved');
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <LoadingState label="Loading settings..." />;
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <h1 className="text-2xl font-bold">Settings</h1>
-      <div className="card p-5 space-y-3">
-        <h2 className="font-semibold">Profile</h2>
-        <p><span className="text-[var(--muted)]">Name:</span> {profile.user.name ?? '—'}</p>
-        <p><span className="text-[var(--muted)]">Email:</span> {profile.user.email}</p>
-      </div>
-      <div className="card p-5 space-y-3">
-        <h2 className="font-semibold">Workspace</h2>
-        <p><span className="text-[var(--muted)]">Name:</span> {profile.workspace.name}</p>
-        <p className="text-sm text-[var(--muted)]">Configure per-session webhooks on the Sessions detail page.</p>
-      </div>
+      <PageHeader title="Settings" description="Manage your profile and workspace defaults." />
+
+      <form onSubmit={onSave} className="card p-6 space-y-5">
+        <div>
+          <h2 className="font-semibold mb-3">Profile</h2>
+          <div className="space-y-3">
+            <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input label="Email" value={settings?.user.email ?? ''} disabled />
+          </div>
+        </div>
+
+        <div>
+          <h2 className="font-semibold mb-3">Workspace</h2>
+          <Input label="Workspace name" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} required />
+        </div>
+
+        <div>
+          <h2 className="font-semibold mb-3">Webhooks</h2>
+          <Input
+            label="Default webhook URL"
+            value={defaultWebhookUrl}
+            onChange={(e) => setDefaultWebhookUrl(e.target.value)}
+            placeholder="https://your-app.com/webhooks/whatsapp"
+          />
+          <p className="text-xs text-[var(--muted)] mt-1">Used for webhook tests when no session URL is set.</p>
+        </div>
+
+        <Button type="submit" loading={saving}>Save changes</Button>
+      </form>
     </div>
   );
 }

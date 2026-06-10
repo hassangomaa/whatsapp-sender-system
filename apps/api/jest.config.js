@@ -7,7 +7,7 @@ module.exports = {
   coverageDirectory: '../coverage',
   testEnvironment: 'node',
   moduleNameMapper: {
-    '^@whatsapp-sender/database$': '<rootDir>/../../../packages/database/src/index.ts',
-    '^@whatsapp-sender/contracts$': '<rootDir>/../../../packages/contracts/src/index.ts',
+    '^@whatsapp-sender/database$': '<rootDir>/../../../packages/database/dist/src/index.js',
+    '^@whatsapp-sender/contracts$': '<rootDir>/../../../packages/contracts/dist/index.js',
   },
 };

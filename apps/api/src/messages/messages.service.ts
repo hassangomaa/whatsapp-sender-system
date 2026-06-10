@@ -14,11 +14,14 @@ export class MessagesService {
     @InjectQueue(QUEUES.SEND_MESSAGE) private readonly sendQueue: Queue,
   ) {}
 
-  async list(workspaceId: string, limit = 50) {
+  async list(workspaceId: string, limit = 50, cursor?: string) {
     return this.prisma.client.message.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'desc' },
       take: limit,
+      ...(cursor
+        ? { skip: 1, cursor: { id: cursor } }
+        : {}),
       include: { session: { select: { id: true, name: true } } },
     });
   }
