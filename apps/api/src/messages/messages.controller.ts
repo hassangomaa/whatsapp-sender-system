@@ -3,7 +3,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { QuotaGuard, RequireQuota } from '../common/quota.guard';
 import { MessagesService } from './messages.service';
-import { SendDashboardMessageDto } from './dto';
+import { SendDashboardMediaDto, SendDashboardMessageDto } from './dto';
 
 @Controller('api/v1/messages')
 @UseGuards(JwtAuthGuard, QuotaGuard)
@@ -26,5 +26,19 @@ export class MessagesController {
     @Body() dto: SendDashboardMessageDto,
   ) {
     return this.messages.send(user.workspaceId, dto.sessionId, dto.phoneNumber, dto.content);
+  }
+
+  @Post('media')
+  @RequireQuota('send')
+  sendMedia(
+    @CurrentUser() user: { workspaceId: string },
+    @Body() dto: SendDashboardMediaDto,
+  ) {
+    return this.messages.sendMedia(user.workspaceId, dto.sessionId, dto.phoneNumber, {
+      mediaType: dto.mediaType,
+      mediaBase64: dto.mediaBase64,
+      caption: dto.caption,
+      filename: dto.filename,
+    });
   }
 }

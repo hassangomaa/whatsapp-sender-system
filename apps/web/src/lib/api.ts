@@ -54,7 +54,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
 export const authApi = {
   login: (email: string, password: string) =>
-    api<{ token: string; user: { name: string | null; email: string } }>(
+    api<{ token: string; user: { name: string | null; email: string | null; phone: string | null } }>(
       '/api/v1/auth/login',
       { method: 'POST', body: JSON.stringify({ email, password }) },
     ),
@@ -63,9 +63,21 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ email, password, name }),
     }),
+  requestOtp: (phone: string) =>
+    api<{ ok: boolean; expiresIn: number; devMode?: boolean }>('/api/v1/auth/otp/request', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    }),
+  verifyOtp: (phone: string, code: string, opts?: { name?: string; email?: string }) =>
+    api<{ token: string; user: { name: string | null; email: string | null; phone: string | null } }>(
+      '/api/v1/auth/otp/verify',
+      { method: 'POST', body: JSON.stringify({ phone, code, ...opts }) },
+    ),
+  peekOtp: (phone: string) =>
+    api<{ code: string | null }>(`/api/v1/auth/otp/peek?phone=${encodeURIComponent(phone)}`),
   me: () =>
     api<{
-      user: { name: string | null; email: string };
+      user: { name: string | null; email: string | null; phone: string | null };
       workspace: { id: string; name: string };
     }>('/api/v1/auth/me'),
 };

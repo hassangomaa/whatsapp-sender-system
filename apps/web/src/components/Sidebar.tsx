@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { NAV_SECTIONS } from '@/lib/nav';
+import { NAV_ICONS } from '@/lib/nav-icons';
 import { api } from '@/lib/api';
+import { WorkspaceCard } from './WorkspaceCard';
+import { SidebarHelpBox } from './SidebarHelpBox';
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -30,7 +33,9 @@ export function Sidebar() {
         </Link>
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-3 space-y-5">
+      <WorkspaceCard />
+
+      <nav className="flex-1 overflow-y-auto px-3 space-y-5">
         {NAV_SECTIONS.map((section) => (
           <div key={section.title}>
             <p className="text-[10px] uppercase tracking-wider text-[var(--muted)] font-semibold px-3 mb-1.5">
@@ -39,19 +44,21 @@ export function Sidebar() {
             <div className="space-y-0.5">
               {section.items.map((link) => {
                 const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+                const Icon = NAV_ICONS[link.iconKey];
                 return (
                   <Link
                     key={link.href}
                     href={link.href}
                     title={link.description}
-                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition ${
+                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition relative ${
                       active
                         ? 'bg-brand/15 text-brand font-semibold shadow-sm'
                         : 'text-[var(--text)] hover:bg-black/5 dark:hover:bg-white/5'
                     }`}
                   >
-                    <span className="w-5 text-center text-xs opacity-70">{link.icon}</span>
-                    <span>{link.label}</span>
+                    {Icon && <Icon className="w-4 h-4 shrink-0 opacity-80" />}
+                    <span className="flex-1">{link.label}</span>
+                    {active && <span className="w-1.5 h-1.5 rounded-full bg-brand shrink-0" />}
                   </Link>
                 );
               })}
@@ -68,10 +75,7 @@ export function Sidebar() {
             <Link href="/packages" className="text-brand hover:underline mt-1 inline-block">Upgrade →</Link>
           </div>
         )}
-        <Link href="/getting-started" className="block card p-3 text-xs text-[var(--muted)] hover:border-brand/30 transition">
-          <p className="font-semibold text-[var(--text)]">Quick start</p>
-          Login → Session → QR → API
-        </Link>
+        <SidebarHelpBox />
       </div>
     </aside>
   );

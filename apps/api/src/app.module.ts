@@ -13,6 +13,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { SettingsModule } from './settings/settings.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
+import { AdminNotifyModule } from './admin-notify/admin-notify.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -25,6 +26,7 @@ import { HealthController } from './health.controller';
     }),
     PrismaModule,
     CommonModule,
+    AdminNotifyModule,
     AuthModule,
     SessionsModule,
     PublicApiModule,

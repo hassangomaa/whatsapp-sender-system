@@ -4,7 +4,21 @@ export const QUEUES = {
   SESSION_DISCONNECT: 'session-disconnect',
   CAMPAIGN_RUN: 'campaign-run',
   WEBHOOK_DELIVER: 'webhook-deliver',
+  ADMIN_NOTIFY: 'admin-notify',
+  OTP_SEND: 'otp-send',
 } as const;
+
+export interface AdminNotifyJob {
+  event: 'register' | 'session_connected' | 'session_limit' | 'quota_exhausted';
+  message: string;
+  workspaceId?: string;
+  dedupeKey?: string;
+}
+
+export interface OtpSendJob {
+  phone: string;
+  code: string;
+}
 
 export const REDIS_CHANNELS = {
   sessionEvent: (sessionId: string) => `session:${sessionId}:events`,

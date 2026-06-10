@@ -59,4 +59,48 @@ export class MessagesService {
 
     return message;
   }
+
+  async sendMedia(
+    workspaceId: string,
+    sessionId: string,
+    phoneNumber: string,
+    opts: { mediaType: string; mediaBase64: string; caption?: string; filename?: string },
+  ) {
+    await this.usage.assertCanSend(workspaceId);
+
+    const session = await this.prisma.client.whatsappSession.findFirst({
+      where: { id: sessionId, workspaceId },
+    });
+    if (!session || session.status !== SessionStatus.CONNECTED) {
+      throw new ForbiddenException('Session not connected');
+    }
+    if (!session.scopeMedia) {
+      throw new ForbiddenException('Media scope not enabled for this session');
+    }
+    if (!isValidPhone(phoneNumber)) {
+      throw new ForbiddenException('Invalid phone number');
+    }
+
+    const normalized = normalizePhone(phoneNumber);
+    const message = await this.prisma.client.message.create({
+      data: {
+        workspaceId,
+        sessionId,
+        phoneNumber: normalized,
+        content: opts.caption ?? `[${opts.mediaType}]`,
+        status: MessageStatus.QUEUED,
+      },
+    });
+
+    await this.sendQueue.add('send', {
+      messageId: message.id,
+      sessionId,
+      phoneNumber: normalized,
+      mediaType: opts.mediaType,
+      mediaBase64: opts.mediaBase64,
+      caption: opts.caption,
+    });
+
+    return message;
+  }
 }

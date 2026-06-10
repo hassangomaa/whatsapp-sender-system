@@ -1,9 +1,22 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 
+const inter = Inter({ subsets: ['latin'], display: 'swap' });
+
 export const metadata: Metadata = {
-  title: 'WhatsApp Sender',
-  description: 'Send WhatsApp messages programmatically',
+  title: {
+    default: 'WhatsApp Sender — Multi-tenant WhatsApp API',
+    template: '%s | WhatsApp Sender',
+  },
+  description: 'Send WhatsApp messages programmatically. Sessions, QR pairing, bulk campaigns, and API keys.',
+  openGraph: {
+    title: 'WhatsApp Sender',
+    description: 'Multi-tenant WhatsApp messaging SaaS',
+    siteName: 'WhatsApp Sender',
+    type: 'website',
+  },
+  twitter: { card: 'summary_large_image', title: 'WhatsApp Sender' },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body>{children}</body>
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }

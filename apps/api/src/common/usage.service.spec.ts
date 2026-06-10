@@ -15,7 +15,12 @@ describe('UsageService', () => {
     },
   };
 
-  const service = new UsageService({ client: prisma } as never);
+  const adminNotify = {
+    notify: jest.fn().mockResolvedValue(undefined),
+    formatQuotaExhausted: jest.fn().mockReturnValue('quota msg'),
+    formatSessionLimit: jest.fn().mockReturnValue('session msg'),
+  };
+  const service = new UsageService({ client: prisma } as never, adminNotify as never);
 
   beforeEach(() => jest.clearAllMocks());
 

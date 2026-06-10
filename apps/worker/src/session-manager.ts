@@ -10,6 +10,7 @@ import { prisma, SessionStatus } from '@whatsapp-sender/database';
 import { WHATSAPP_QR_REFRESH_SECONDS } from '@whatsapp-sender/contracts';
 import { publishSessionEvent } from './redis';
 import { issueApiKeyIfNeeded } from './issue-api-key';
+import { enqueueAdminNotify } from './admin-notify-queue';
 import { BAILEYS_LOGGED_OUT, resolveCloseAction } from './session-close';
 
 const sessionsDir = path.join(process.cwd(), 'sessions');
@@ -106,6 +107,18 @@ export class SessionManager {
           });
 
           await issueApiKeyIfNeeded(sessionId);
+
+          const sessionRow = await prisma.whatsappSession.findUnique({
+            where: { id: sessionId },
+          });
+          if (sessionRow) {
+            await enqueueAdminNotify({
+              event: 'session_connected',
+              message: `Session linked: ${sessionRow.name} +${phone} — workspace ${sessionRow.workspaceId}`,
+              workspaceId: sessionRow.workspaceId,
+              dedupeKey: `connect:${sessionId}`,
+            });
+          }
 
           await publishSessionEvent(sessionId, {
             type: 'connected',

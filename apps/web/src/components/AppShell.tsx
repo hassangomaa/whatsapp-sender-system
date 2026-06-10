@@ -4,14 +4,13 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
-import { ThemeToggle } from './ThemeToggle';
+import { TopHeader } from './TopHeader';
 import { LoadingState } from './LoadingState';
-import { Button } from './ui/Button';
 import { authApi, clearAuth } from '@/lib/api';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [user, setUser] = useState<{ name: string | null; email: string } | null>(null);
+  const [user, setUser] = useState<{ name: string | null; email: string | null; phone: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,35 +30,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col lg:flex-row">
+    <div className="flex min-h-screen flex-col lg:flex-row bg-[var(--bg)]">
       <div className="hidden lg:block">
         <Sidebar />
       </div>
       <div className="flex-1 flex flex-col min-w-0">
         <MobileNav />
-        <header className="flex items-center justify-between border-b border-[var(--border)] px-4 sm:px-6 py-3 sm:py-4 bg-[var(--card)]">
-          <p className="text-xs sm:text-sm text-[var(--muted)] hidden sm:block">Multi-tenant WhatsApp control center</p>
-          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
-            <ThemeToggle />
-            {user && (
-              <div className="text-right text-sm hidden sm:block">
-                <div className="font-semibold truncate max-w-[160px]">{user.name ?? user.email}</div>
-                <div className="text-[var(--muted)] text-xs truncate max-w-[160px]">{user.email}</div>
-              </div>
-            )}
-            <Button
-              variant="secondary"
-              className="text-xs sm:text-sm"
-              onClick={() => {
-                clearAuth();
-                router.push('/login');
-              }}
-            >
-              Logout
-            </Button>
-          </div>
-        </header>
-        <main className="p-4 sm:p-6 flex-1">{children}</main>
+        {user && (
+          <TopHeader
+            user={user}
+            onLogout={() => {
+              clearAuth();
+              router.push('/login');
+            }}
+          />
+        )}
+        <main className="p-4 sm:p-6 flex-1 max-w-7xl w-full mx-auto">{children}</main>
       </div>
     </div>
   );

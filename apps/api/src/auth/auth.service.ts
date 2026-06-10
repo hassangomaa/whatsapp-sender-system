@@ -13,6 +13,9 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
+    if (!dto.email) {
+      throw new ConflictException('Use phone OTP signup or provide email');
+    }
     const existing = await this.prisma.client.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
@@ -20,26 +23,29 @@ export class AuthService {
       throw new ConflictException('Email already registered');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const passwordHash = await bcrypt.hash(dto.password!, 12);
     const user = await this.prisma.client.user.create({
       data: {
         email: dto.email.toLowerCase(),
         passwordHash,
         name: dto.name,
-        phone: dto.phone,
+        phone: dto.phone ?? null,
       },
     });
 
-    const workspace = await this.bootstrapWorkspace(user.id, user.name ?? user.email);
+    const workspace = await this.bootstrapWorkspaceForUser(user.id, user.name ?? user.email!);
 
     return this.buildAuthResponse(user, workspace.id);
   }
 
   async login(dto: LoginDto) {
+    if (!dto.email || !dto.password) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
     const user = await this.prisma.client.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
-    if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
+    if (!user?.passwordHash || !(await bcrypt.compare(dto.password, user.passwordHash))) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -50,7 +56,7 @@ export class AuthService {
 
     const workspaceId = membership?.workspaceId;
     if (!workspaceId) {
-      const ws = await this.bootstrapWorkspace(user.id, user.name ?? user.email);
+      const ws = await this.bootstrapWorkspaceForUser(user.id, user.name ?? user.email!);
       return this.buildAuthResponse(user, ws.id);
     }
 
@@ -73,12 +79,12 @@ export class AuthService {
     };
   }
 
-  private async bootstrapWorkspace(userId: string, label: string) {
+  async bootstrapWorkspaceForUser(userId: string, label: string) {
     const trialPlan = await this.prisma.client.plan.findUnique({
       where: { slug: 'trial' },
     });
 
-    const workspace = await this.prisma.client.workspace.create({
+    return this.prisma.client.workspace.create({
       data: {
         name: `${label}'s Workspace`,
         ownerId: userId,
@@ -100,12 +106,10 @@ export class AuthService {
           : {}),
       },
     });
-
-    return workspace;
   }
 
-  private buildAuthResponse(
-    user: { id: string; email: string; name: string | null; phone: string | null },
+  buildAuthResponse(
+    user: { id: string; email: string | null; name: string | null; phone: string | null },
     workspaceId: string,
   ) {
     const token = this.jwt.sign({ sub: user.id, workspaceId });

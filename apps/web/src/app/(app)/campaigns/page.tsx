@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/PageHeader';
+import { InfoCallout } from '@/components/InfoCallout';
+import Link from 'next/link';
 import { LoadingState } from '@/components/LoadingState';
 import { EmptyState } from '@/components/EmptyState';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -114,9 +116,29 @@ export default function CampaignsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Bulk campaigns" description="Send messages to multiple recipients with queued delivery." />
+      <PageHeader
+        title="Bulk campaigns"
+        description="Create safe, scheduled campaigns with opt-in recipients."
+        actions={<Button type="button" onClick={() => document.getElementById('campaign-form')?.scrollIntoView({ behavior: 'smooth' })}>+ New campaign</Button>}
+      />
 
-      <form onSubmit={onCreate} className="card p-5 space-y-3">
+      <InfoCallout title="Bulk campaign checklist" variant="tip">
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Only message users who opted in to receive WhatsApp from you.</li>
+          <li>Start with a small test list before large sends.</li>
+          <li>Keep content clear and include an opt-out when required.</li>
+        </ul>
+      </InfoCallout>
+
+      <InfoCallout title="Bulk messaging safety" variant="warning">
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Abusive bulk messaging can get your WhatsApp number banned.</li>
+          <li>Respect local regulations and WhatsApp Business policies.</li>
+          <li>Use campaigns for legitimate notifications, not spam.</li>
+        </ul>
+      </InfoCallout>
+
+      <form id="campaign-form" onSubmit={onCreate} className="card p-5 space-y-3">
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Campaign name" required />
         <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="input-field" required>
           <option value="">Select session</option>

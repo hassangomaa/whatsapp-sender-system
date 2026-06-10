@@ -2,6 +2,7 @@ import './env';
 import { prisma } from '@whatsapp-sender/database';
 import { sessionManager } from './session-manager';
 import { startWorkers } from './processors';
+import { startNotifyWorkers } from './notify-workers';
 import { startHealthLoop } from './health-loop';
 
 async function main() {
@@ -9,6 +10,7 @@ async function main() {
   console.log('Worker connected to database');
 
   startWorkers();
+  startNotifyWorkers();
   const stopHealth = startHealthLoop();
 
   await sessionManager.restoreConnectedSessions();

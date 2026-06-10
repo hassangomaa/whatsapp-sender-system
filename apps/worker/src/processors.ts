@@ -16,6 +16,7 @@ import {
 import { sessionManager } from './session-manager';
 import { waitForSessionRateLimit } from './rate-limiter';
 import { scheduleWebhook } from './webhook-queue';
+import { enqueueAdminNotify } from './admin-notify-queue';
 
 const connection = { url: process.env.REDIS_URL ?? 'redis://localhost:6379' };
 const DEFAULT_RATE_MS = Number(process.env.SEND_RATE_LIMIT_MS ?? 3000);
@@ -84,10 +85,20 @@ async function markMessageSent(messageId: string, externalId?: string) {
     include: { session: true },
   });
 
-  await prisma.usageCounter.update({
+  const usage = await prisma.usageCounter.update({
     where: { workspaceId: message.workspaceId },
     data: { messagesSent: { increment: 1 } },
   });
+
+  const remaining = usage.messageLimit - usage.messagesSent;
+  if (remaining <= 0) {
+    await enqueueAdminNotify({
+      event: 'quota_exhausted',
+      message: `Quota exhausted: workspace ${message.workspaceId} (${usage.messagesSent}/${usage.messageLimit})`,
+      workspaceId: message.workspaceId,
+      dedupeKey: `quota:${message.workspaceId}`,
+    });
+  }
 
   if (message.session.webhookUrl && message.session.scopeWebhook) {
     await scheduleWebhook(message.session.webhookUrl, message.workspaceId, message.sessionId, message.id, {

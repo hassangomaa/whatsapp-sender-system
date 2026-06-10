@@ -1,12 +1,16 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminNotifyService } from '../admin-notify/admin-notify.service';
 
 const DEFAULT_TRIAL_LIMIT = 30;
 const DEFAULT_MAX_SESSIONS = 1;
 
 @Injectable()
 export class UsageService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly adminNotify: AdminNotifyService,
+  ) {}
 
   async getPlanLimits(workspaceId: string) {
     const subscription = await this.prisma.client.subscription.findUnique({
@@ -39,6 +43,16 @@ export class UsageService {
   async assertCanSend(workspaceId: string) {
     const usage = await this.getUsage(workspaceId);
     if (usage.remaining <= 0) {
+      await this.adminNotify.notify({
+        event: 'quota_exhausted',
+        message: this.adminNotify.formatQuotaExhausted({
+          workspaceId,
+          used: usage.messagesSent,
+          limit: usage.messageLimit,
+        }),
+        workspaceId,
+        dedupeKey: `quota:${workspaceId}`,
+      });
       throw new ForbiddenException({
         statusCode: 403,
         message: 'Quota exhausted. Activate a package or redeem a code.',
@@ -54,6 +68,16 @@ export class UsageService {
       where: { workspaceId },
     });
     if (count >= limits.maxSessions) {
+      await this.adminNotify.notify({
+        event: 'session_limit',
+        message: this.adminNotify.formatSessionLimit({
+          workspaceId,
+          used: count,
+          max: limits.maxSessions,
+        }),
+        workspaceId,
+        dedupeKey: `session-limit:${workspaceId}`,
+      });
       throw new ForbiddenException({
         statusCode: 403,
         message: `Session limit reached (${limits.maxSessions}). Upgrade your package.`,

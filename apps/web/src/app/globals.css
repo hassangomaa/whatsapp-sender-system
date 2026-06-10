@@ -3,11 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f8fafc;
+  --bg: #f9fafb;
   --card: #ffffff;
   --text: #0f172a;
   --muted: #64748b;
-  --border: #e2e8f0;
+  --border: #e5e7eb;
+  --callout-blue: #eff6ff;
+  --callout-yellow: #fffbeb;
+  --callout-green: #ecfdf5;
 }
 
 .dark {
@@ -16,6 +19,9 @@
   --text: #f8fafc;
   --muted: #94a3b8;
   --border: #1f2937;
+  --callout-blue: #0f172a;
+  --callout-yellow: #1c1917;
+  --callout-green: #052e16;
 }
 
 body {
@@ -57,4 +63,24 @@ body {
 
 .table-responsive {
   @apply overflow-x-auto -mx-4 sm:mx-0;
+}
+
+.data-table {
+  @apply w-full text-sm;
+}
+
+.data-table thead {
+  @apply bg-black/[0.03] dark:bg-white/[0.04];
+}
+
+.data-table th {
+  @apply text-left p-3 font-medium text-[var(--muted)] text-xs uppercase tracking-wide;
+}
+
+.data-table td {
+  @apply p-3 border-t border-[var(--border)];
+}
+
+.page-footer-tip {
+  @apply text-center text-xs text-[var(--muted)] py-4 border-t border-[var(--border)] mt-8;
 }

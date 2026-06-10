@@ -3,10 +3,11 @@ import { InputHTMLAttributes, forwardRef } from 'react';
 type Props = InputHTMLAttributes<HTMLInputElement> & {
   label?: string;
   error?: string;
+  hint?: string;
 };
 
 export const Input = forwardRef<HTMLInputElement, Props>(function Input(
-  { label, error, className = '', ...props },
+  { label, error, hint, className = '', ...props },
   ref,
 ) {
   return (
@@ -17,6 +18,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
         className={`w-full rounded-xl border border-[var(--border)] bg-transparent px-3 py-2.5 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20 ${error ? 'border-red-500' : ''} ${className}`}
         {...props}
       />
+      {hint && !error && <span className="text-xs text-[var(--muted)]">{hint}</span>}
       {error && <span className="text-xs text-red-600">{error}</span>}
     </label>
   );
