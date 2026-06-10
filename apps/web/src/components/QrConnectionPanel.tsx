@@ -17,6 +17,7 @@ type Props = {
   baileysMock: boolean;
   phone: string | null;
   pairing: boolean;
+  connecting: boolean;
 };
 
 export function QrConnectionPanel({
@@ -27,11 +28,12 @@ export function QrConnectionPanel({
   baileysMock,
   phone,
   pairing,
+  connecting,
 }: Props) {
   const [secondsLeft, setSecondsLeft] = useState(qrRefreshSeconds);
 
   useEffect(() => {
-    if (!qrExpiresAt || status === 'connected') return;
+    if (!qrExpiresAt || status === 'connected' || connecting) return;
 
     const tick = () => {
       const left = Math.max(0, Math.ceil((qrExpiresAt - Date.now()) / 1000));
@@ -40,13 +42,13 @@ export function QrConnectionPanel({
     tick();
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
-  }, [qrExpiresAt, status, qr]);
+  }, [qrExpiresAt, status, qr, connecting]);
 
   useEffect(() => {
-    if (qrExpiresAt) {
+    if (qrExpiresAt && !connecting) {
       setSecondsLeft(Math.max(0, Math.ceil((qrExpiresAt - Date.now()) / 1000)));
     }
-  }, [qr, qrExpiresAt]);
+  }, [qr, qrExpiresAt, connecting]);
 
   if (status === 'connected') {
     return (
@@ -61,6 +63,23 @@ export function QrConnectionPanel({
             Demo mode — this was a simulated connection. Set <code className="font-mono">BAILEYS_MOCK=0</code> in
             .env and restart the worker to pair a real device.
           </p>
+        )}
+      </div>
+    );
+  }
+
+  if (connecting || status === 'connecting') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-10 text-center min-h-[220px]">
+        <div className="w-12 h-12 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+        <div>
+          <p className="font-medium text-brand">Scan accepted — linking device…</p>
+          <p className="text-sm text-[var(--muted)] mt-2 max-w-sm">
+            WhatsApp is finishing the connection. Keep this page open — do not scan again.
+          </p>
+        </div>
+        {qr && (
+          <p className="text-xs text-[var(--muted)]">Previous QR is no longer needed.</p>
         )}
       </div>
     );

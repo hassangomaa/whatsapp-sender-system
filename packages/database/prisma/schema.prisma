@@ -10,6 +10,7 @@ datasource db {
 enum SessionStatus {
   DISCONNECTED
   QR_PENDING
+  CONNECTING
   CONNECTED
 }
 
@@ -99,8 +100,8 @@ model WhatsappSession {
   workspaceId     String        @map("workspace_id")
   name            String
   phone           String?
-  apiKeyHash      String        @unique @map("api_key_hash")
-  apiKeyPrefix    String        @map("api_key_prefix")
+  apiKeyHash      String?       @unique @map("api_key_hash")
+  apiKeyPrefix    String?       @map("api_key_prefix")
   status          SessionStatus @default(DISCONNECTED)
   scopeSend       Boolean       @default(true) @map("scope_send")
   scopeMedia      Boolean       @default(true) @map("scope_media")

@@ -27,21 +27,21 @@ export class SessionsService {
   }
 
   async create(workspaceId: string, name: string) {
-    const { key, prefix, hash } = generateApiKey();
     const session = await this.prisma.client.whatsappSession.create({
       data: {
         workspaceId,
         name,
-        apiKeyHash: hash,
-        apiKeyPrefix: prefix,
         status: SessionStatus.DISCONNECTED,
       },
     });
-    return { ...this.toPublicSession(session), apiKey: key };
+    return this.toPublicSession(session);
   }
 
   async init(workspaceId: string, id: string) {
     const session = await this.findSession(workspaceId, id);
+    if (session.status === SessionStatus.CONNECTING) {
+      return { status: 'connecting', message: 'Pairing in progress' };
+    }
     await this.prisma.client.whatsappSession.update({
       where: { id: session.id },
       data: { status: SessionStatus.QR_PENDING, qrCode: null },
@@ -55,7 +55,13 @@ export class SessionsService {
     await this.disconnectQueue.add('disconnect', { sessionId: id });
     await this.prisma.client.whatsappSession.update({
       where: { id },
-      data: { status: SessionStatus.DISCONNECTED, qrCode: null, phone: null },
+      data: {
+        status: SessionStatus.DISCONNECTED,
+        qrCode: null,
+        phone: null,
+        apiKeyHash: null,
+        apiKeyPrefix: null,
+      },
     });
     return { status: 'disconnected' };
   }
@@ -85,6 +91,24 @@ export class SessionsService {
     });
   }
 
+  async issueApiKey(sessionId: string) {
+    const session = await this.prisma.client.whatsappSession.findUnique({
+      where: { id: sessionId },
+    });
+    if (!session || session.status !== SessionStatus.CONNECTED) {
+      return null;
+    }
+    if (session.apiKeyHash) {
+      return null;
+    }
+    const { key, prefix, hash } = generateApiKey();
+    await this.prisma.client.whatsappSession.update({
+      where: { id: sessionId },
+      data: { apiKeyHash: hash, apiKeyPrefix: prefix },
+    });
+    return key;
+  }
+
   private async findSession(workspaceId: string, id: string) {
     const session = await this.prisma.client.whatsappSession.findFirst({
       where: { id, workspaceId },
@@ -100,7 +124,7 @@ export class SessionsService {
     name: string;
     phone: string | null;
     status: SessionStatus;
-    apiKeyPrefix: string;
+    apiKeyPrefix: string | null;
     scopeSend: boolean;
     scopeMedia: boolean;
     scopeWebhook: boolean;
@@ -110,12 +134,14 @@ export class SessionsService {
     createdAt: Date;
     updatedAt: Date;
   }) {
+    const hasApiKey = Boolean(session.apiKeyPrefix);
     return {
       id: session.id,
       name: session.name,
       phone: session.phone,
       status: session.status.toLowerCase(),
       apiKeyPrefix: session.apiKeyPrefix,
+      hasApiKey,
       scopes: {
         send: session.scopeSend,
         media: session.scopeMedia,

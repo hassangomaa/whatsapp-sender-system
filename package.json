@@ -17,7 +17,7 @@
     "db:generate": "npm run generate -w @whatsapp-sender/database",
     "db:migrate": "npm run migrate -w @whatsapp-sender/database",
     "db:push": "npm run push -w @whatsapp-sender/database",
-    "test": "npm run test -w @whatsapp-sender/api",
+    "test": "npm run test -w @whatsapp-sender/api && npm run test -w @whatsapp-sender/worker",
     "test:contract": "npm run test:contract -w @whatsapp-sender/api",
     "test:e2e": "npm run test:e2e -w @whatsapp-sender/web",
     "smoke:public-api": "bash scripts/smoke-public-api.sh",

@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/LoadingState';
-import { CopyButton } from '@/components/CopyButton';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
@@ -14,14 +13,14 @@ type Session = {
   name: string;
   phone: string | null;
   status: string;
-  apiKeyPrefix: string;
+  apiKeyPrefix: string | null;
+  hasApiKey: boolean;
   canSendMessages: boolean;
 };
 
 export default function SessionsPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [name, setName] = useState('');
-  const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
@@ -40,13 +39,13 @@ export default function SessionsPage() {
     setCreating(true);
     setError('');
     try {
-      const res = await api<Session & { apiKey: string }>('/api/v1/sessions', {
+      const res = await api<Session>('/api/v1/sessions', {
         method: 'POST',
         body: JSON.stringify({ name }),
       });
-      setCreatedKey(res.apiKey);
       setName('');
       await load();
+      window.location.href = `/sessions/${res.id}`;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create session');
     } finally {
@@ -60,7 +59,7 @@ export default function SessionsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Sessions"
-        description="Each session is a WhatsApp device connection with its own API key."
+        description="Each session is a WhatsApp device. Pair via QR to receive your API key."
       />
 
       <form onSubmit={onCreate} className="card p-4 sm:p-5 flex flex-col sm:flex-row gap-3">
@@ -82,16 +81,6 @@ export default function SessionsPage() {
         </div>
       )}
 
-      {createdKey && (
-        <div className="card p-5 border-brand/50 bg-brand/5">
-          <p className="font-semibold text-brand">Save your API key — shown only once</p>
-          <code className="block mt-3 break-all text-sm bg-black/5 dark:bg-white/5 p-3 rounded-xl">{createdKey}</code>
-          <div className="mt-3">
-            <CopyButton text={createdKey} label="Copy API key" />
-          </div>
-        </div>
-      )}
-
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {sessions.map((s) => (
           <Link
@@ -103,9 +92,19 @@ export default function SessionsPage() {
               <div className="min-w-0">
                 <h2 className="font-semibold text-lg truncate">{s.name}</h2>
                 <p className="text-sm text-[var(--muted)] mt-1">{s.phone ?? 'No phone linked'}</p>
-                <p className="text-xs text-[var(--muted)] mt-1 font-mono">{s.apiKeyPrefix}…</p>
+                <p className="text-xs text-[var(--muted)] mt-1 font-mono">
+                  {s.hasApiKey && s.apiKeyPrefix ? `${s.apiKeyPrefix}…` : 'API key after pairing'}
+                </p>
               </div>
-              <span className={s.status === 'connected' ? 'badge-green shrink-0' : s.status === 'qr_pending' ? 'badge-gray shrink-0' : 'badge-red shrink-0'}>
+              <span
+                className={
+                  s.status === 'connected'
+                    ? 'badge-green shrink-0'
+                    : s.status === 'qr_pending' || s.status === 'connecting'
+                      ? 'badge-gray shrink-0'
+                      : 'badge-red shrink-0'
+                }
+              >
                 {s.status.replace('_', ' ')}
               </span>
             </div>
@@ -118,7 +117,7 @@ export default function SessionsPage() {
 
       {sessions.length === 0 && (
         <div className="card p-8 text-center text-[var(--muted)]">
-          <p>No sessions yet. Create one above to get your API key and QR code.</p>
+          No sessions yet. Create one above, then open it and click Init / QR.
         </div>
       )}
     </div>

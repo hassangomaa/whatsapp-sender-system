@@ -77,8 +77,8 @@ export default function DocsPage() {
         <section id="auth" className="card p-6 space-y-4 scroll-mt-6">
           <h2 className="font-semibold text-lg">Authentication</h2>
           <p className="text-sm text-[var(--muted)]">
-            Each session has a unique API key (shown once at creation on{' '}
-            <Link href="/sessions" className="text-brand">Sessions</Link>).
+            Each session gets a unique API key after WhatsApp pairing completes on the{' '}
+            <Link href="/sessions" className="text-brand">Sessions</Link> detail page (shown once when connected).
           </p>
           <ul className="text-sm space-y-2 list-disc pl-5 text-[var(--muted)]">
             <li>Header: <code className="text-xs">x-api-key: sk_live_...</code></li>

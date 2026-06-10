@@ -18,11 +18,12 @@ test.describe('Full integration flow', () => {
     await page.goto('/sessions');
     await page.getByPlaceholder('Session name (e.g. TabletPOS)').fill('Flow Session');
     await page.getByRole('button', { name: 'Create session' }).click();
-    await expect(page.getByText('Save your API key')).toBeVisible();
+    await expect(page).toHaveURL(/\/sessions\//);
 
-    await page.getByText('Flow Session').click();
     await page.getByRole('button', { name: 'Init / QR' }).click();
-    await expect(page.getByText(/QR|connected/i).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/linked successfully|waiting for scan/i).first()).toBeVisible({
+      timeout: 15000,
+    });
 
     await page.goto('/docs');
     await expect(page.getByText('API playground')).toBeVisible();

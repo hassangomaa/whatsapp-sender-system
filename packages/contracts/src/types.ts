@@ -30,12 +30,21 @@ export interface WebhookDeliverJob {
 }
 
 export interface SessionEvent {
-  type: 'qr' | 'connected' | 'disconnected' | 'error' | 'snapshot';
+  type:
+    | 'qr'
+    | 'pairing_accepted'
+    | 'connected'
+    | 'disconnected'
+    | 'error'
+    | 'snapshot'
+    | 'api_key_ready';
   sessionId: string;
   qr?: string;
   phone?: string;
   message?: string;
   status?: string;
+  /** Full API key — sent once when session becomes connected. */
+  apiKey?: string;
   /** Unix ms — when the current QR expires (WhatsApp ~20s refresh). */
   qrExpiresAt?: number;
   /** True when BAILEYS_MOCK=1 simulated the connection (no real scan). */

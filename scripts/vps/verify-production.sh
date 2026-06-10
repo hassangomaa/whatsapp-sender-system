@@ -39,6 +39,13 @@ code=$(curl -s -o /dev/null -w "%{http_code}" "$WEB/")
 echo "  GET $WEB → $code"
 [[ "$code" == "200" ]] || exit 1
 
+echo "=== Pairing readiness ==="
+health=$(curl -sf "$API/health")
+echo "  $health"
+echo "$health" | grep -q '"baileysMock":false' || echo "⚠️  BAILEYS_MOCK is not false"
+echo "  Manual: create session → Init/QR → scan → expect 'connected' + API key"
+echo "  Public API without key/connect: expect 401/503"
+
 echo ""
 echo "✅ Production verify passed"
 echo "   Dashboard: $WEB"

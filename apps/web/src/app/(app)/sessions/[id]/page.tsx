@@ -20,7 +20,8 @@ type Session = {
   name: string;
   phone: string | null;
   status: string;
-  apiKeyPrefix: string;
+  apiKeyPrefix: string | null;
+  hasApiKey: boolean;
   qrCode: string | null;
   scopes: { send: boolean; media: boolean; webhook: boolean };
   webhookUrl: string | null;
@@ -34,6 +35,8 @@ type StreamEvent = {
   status?: string;
   phone?: string;
   mock?: boolean;
+  apiKey?: string;
+  message?: string;
 };
 
 export default function SessionDetailPage() {
@@ -44,6 +47,8 @@ export default function SessionDetailPage() {
   const [qrExpiresAt, setQrExpiresAt] = useState<number | null>(null);
   const [baileysMock, setBaileysMock] = useState(false);
   const [pairing, setPairing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [apiKey, setApiKey] = useState<string | null>(null);
   const [scopes, setScopes] = useState({ send: true, media: true, webhook: false });
   const [webhookUrl, setWebhookUrl] = useState('');
   const [initLoading, setInitLoading] = useState(false);
@@ -52,23 +57,41 @@ export default function SessionDetailPage() {
   const [savingScopes, setSavingScopes] = useState(false);
   const { success, error: toastError } = useToast();
   const pairingRef = useRef(false);
+  const connectingRef = useRef(false);
 
   const applyStreamEvent = useCallback((data: StreamEvent) => {
     if (data.mock !== undefined) setBaileysMock(data.mock);
-    if (data.qr) {
+    if (data.type === 'pairing_accepted' || data.status === 'connecting') {
+      connectingRef.current = true;
+      setConnecting(true);
+      setPairing(true);
+      pairingRef.current = true;
+    }
+    if (data.qr && !connectingRef.current) {
       setQr(data.qr);
       setQrExpiresAt(data.qrExpiresAt ?? Date.now() + QR_REFRESH_SECONDS * 1000);
       setPairing(true);
+      pairingRef.current = true;
     }
     if (data.type === 'connected' || data.status === 'connected') {
       setQr(null);
       setQrExpiresAt(null);
       setPairing(false);
+      connectingRef.current = false;
+      setConnecting(false);
       pairingRef.current = false;
     }
+    if (data.type === 'api_key_ready' && data.apiKey) {
+      setApiKey(data.apiKey);
+    }
     if (data.type === 'disconnected' || data.status === 'disconnected') {
-      setQr(null);
-      setQrExpiresAt(null);
+      if (data.type === 'disconnected') {
+        setQr(null);
+        setQrExpiresAt(null);
+        connectingRef.current = false;
+        setConnecting(false);
+        setApiKey(null);
+      }
     }
   }, []);
 
@@ -76,14 +99,22 @@ export default function SessionDetailPage() {
     setSession(s);
     setScopes(s.scopes);
     setWebhookUrl(s.webhookUrl ?? '');
+    if (s.status === 'connecting') {
+      connectingRef.current = true;
+      setConnecting(true);
+      setPairing(true);
+      pairingRef.current = true;
+    }
     if (s.status === 'qr_pending' && s.qrCode) {
       setQr(s.qrCode);
       setQrExpiresAt(Date.now() + QR_REFRESH_SECONDS * 1000);
       setPairing(true);
+      setConnecting(false);
     }
     if (s.status === 'connected') {
       setQr(null);
       setPairing(false);
+      setConnecting(false);
       pairingRef.current = false;
     }
   }), [id]);
@@ -121,9 +152,12 @@ export default function SessionDetailPage() {
           try {
             const data = JSON.parse(line.slice(6)) as StreamEvent;
             applyStreamEvent(data);
-            if (data.type === 'connected') load();
+            if (data.type === 'connected' || data.type === 'api_key_ready') load();
             if (data.type === 'snapshot' && data.status) {
-              if (data.status !== 'connected') setPairing(pairingRef.current);
+              if (data.status === 'connecting') setConnecting(true);
+              if (data.status !== 'connected' && data.status !== 'connecting') {
+                setPairing(pairingRef.current);
+              }
             }
           } catch {}
         }
@@ -145,28 +179,42 @@ export default function SessionDetailPage() {
   if (!session) return <LoadingState label="Loading session..." />;
 
   const sendUrl = `${API_URL}/api/v1/whatsapp/public/message/send`;
+  const keyForCurl = apiKey ?? (session.hasApiKey ? `${session.apiKeyPrefix}…` : 'sk_live_<available_after_connect>');
   const curlExample = `curl -X POST '${sendUrl}' \\
   -H 'Content-Type: application/json' \\
-  -H 'x-api-key: sk_live_<your_key>' \\
+  -H 'x-api-key: ${keyForCurl}' \\
   -H 'Idempotency-Key: unique-key-1' \\
   -d '{"phoneNumber":"201277785111","content":"Hello"}'`;
 
-  const statusLabel = session.status.replace('_', ' ');
+  const statusLabel = connecting || session.status === 'connecting'
+    ? 'linking device'
+    : session.status.replace('_', ' ');
+
+  const initDisabled = initLoading || connecting || session.status === 'connecting' ||
+    (session.status === 'qr_pending' && pairing);
 
   return (
     <div className="space-y-6">
       <Link href="/sessions" className="text-sm text-brand hover:underline">← Back to sessions</Link>
       <PageHeader
         title={session.name}
-        description={`${session.phone ? `+${session.phone}` : 'Not linked yet'} · ${session.apiKeyPrefix}…`}
+        description={
+          session.phone
+            ? `+${session.phone}`
+            : session.hasApiKey
+              ? `Not linked yet · ${session.apiKeyPrefix}…`
+              : 'Not linked yet · API key after pairing'
+        }
         actions={
           <>
             <Button
               loading={initLoading}
+              disabled={initDisabled}
               onClick={async () => {
                 setInitLoading(true);
                 setPairing(true);
                 pairingRef.current = true;
+                setConnecting(false);
                 setQr(null);
                 try {
                   await api(`/api/v1/sessions/${id}/init`, { method: 'POST' });
@@ -197,16 +245,19 @@ export default function SessionDetailPage() {
             className={
               session.status === 'connected'
                 ? 'badge-green'
-                : session.status === 'qr_pending' || pairing
+                : connecting || session.status === 'connecting' || session.status === 'qr_pending' || pairing
                   ? 'badge-gray'
                   : 'badge-red'
             }
           >
-            {pairing && session.status !== 'connected' ? 'waiting for scan' : statusLabel}
+            {pairing && session.status !== 'connected' && session.status !== 'connecting'
+              ? 'waiting for scan'
+              : statusLabel}
           </span>
           <ul className="text-sm mt-4 space-y-2 text-[var(--muted)]">
             <li>Linked: {session.status === 'connected' ? 'Yes' : 'No'}</li>
             <li>Can send: {session.canSendMessages ? 'Yes' : 'No'}</li>
+            <li>API key: {session.hasApiKey || apiKey ? 'Ready' : 'After pairing'}</li>
             <li>QR refresh: every {QR_REFRESH_SECONDS}s</li>
             <li className="font-mono text-xs break-all">ID: {session.id}</li>
           </ul>
@@ -222,9 +273,30 @@ export default function SessionDetailPage() {
             baileysMock={baileysMock}
             phone={session.phone}
             pairing={pairing || session.status === 'qr_pending'}
+            connecting={connecting || session.status === 'connecting'}
           />
         </div>
       </div>
+
+      {(session.status === 'connected' && (apiKey || session.hasApiKey)) && (
+        <div className="card p-5 border-brand/50 bg-brand/5">
+          <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
+            <h2 className="font-semibold">API key</h2>
+            {apiKey && <CopyButton text={apiKey} label="Copy API key" />}
+          </div>
+          {apiKey ? (
+            <>
+              <p className="text-sm text-[var(--muted)] mb-3">Save this key — shown once after pairing.</p>
+              <code className="block break-all text-sm bg-black/5 dark:bg-white/5 p-3 rounded-xl">{apiKey}</code>
+            </>
+          ) : (
+            <p className="text-sm text-[var(--muted)]">
+              Key prefix <code className="font-mono">{session.apiKeyPrefix}</code> — full key was shown when you
+              first connected. Disconnect and re-pair to generate a new key.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="card p-5">
         <h2 className="font-semibold mb-3">API scopes</h2>
@@ -283,6 +355,8 @@ export default function SessionDetailPage() {
             await api(`/api/v1/sessions/${id}/disconnect`, { method: 'POST' });
             setQr(null);
             setPairing(false);
+            setConnecting(false);
+            setApiKey(null);
             pairingRef.current = false;
             success('Session disconnected — scan a new QR to reconnect');
             await load();
@@ -299,8 +373,11 @@ export default function SessionDetailPage() {
       <div className="card p-5">
         <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
           <h2 className="font-semibold">API example</h2>
-          <CopyButton text={curlExample} label="Copy curl" />
+          {apiKey && <CopyButton text={curlExample} label="Copy curl" />}
         </div>
+        {!session.hasApiKey && !apiKey && (
+          <p className="text-sm text-[var(--muted)] mb-3">API key becomes available after WhatsApp is linked.</p>
+        )}
         <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{curlExample}</pre>
       </div>
     </div>

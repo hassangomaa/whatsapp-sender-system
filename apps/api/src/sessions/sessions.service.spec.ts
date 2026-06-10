@@ -7,6 +7,7 @@ describe('SessionsService', () => {
     whatsappSession: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -30,7 +31,7 @@ describe('SessionsService', () => {
         name: 'POS',
         phone: null,
         status: SessionStatus.DISCONNECTED,
-        apiKeyPrefix: 'sk_live',
+        apiKeyPrefix: null,
         scopeSend: true,
         scopeMedia: false,
         scopeWebhook: false,
@@ -45,16 +46,17 @@ describe('SessionsService', () => {
     const rows = await service.list('ws-1');
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe('disconnected');
+    expect(rows[0].hasApiKey).toBe(false);
     expect(rows[0].canSendMessages).toBe(false);
   });
 
-  it('creates session with api key', async () => {
+  it('creates session without api key', async () => {
     prisma.whatsappSession.create.mockResolvedValue({
       id: 's1',
       name: 'POS',
       phone: null,
       status: SessionStatus.DISCONNECTED,
-      apiKeyPrefix: 'sk_live',
+      apiKeyPrefix: null,
       scopeSend: true,
       scopeMedia: true,
       scopeWebhook: true,
@@ -66,8 +68,15 @@ describe('SessionsService', () => {
     });
 
     const created = await service.create('ws-1', 'POS');
-    expect(created.apiKey).toMatch(/^sk_live_/);
-    expect(prisma.whatsappSession.create).toHaveBeenCalled();
+    expect((created as { apiKey?: string }).apiKey).toBeUndefined();
+    expect(created.hasApiKey).toBe(false);
+    expect(prisma.whatsappSession.create).toHaveBeenCalledWith({
+      data: {
+        workspaceId: 'ws-1',
+        name: 'POS',
+        status: SessionStatus.DISCONNECTED,
+      },
+    });
   });
 
   it('throws when session not found', async () => {
@@ -76,7 +85,11 @@ describe('SessionsService', () => {
   });
 
   it('init queues QR generation', async () => {
-    prisma.whatsappSession.findFirst.mockResolvedValue({ id: 's1', workspaceId: 'ws-1' });
+    prisma.whatsappSession.findFirst.mockResolvedValue({
+      id: 's1',
+      workspaceId: 'ws-1',
+      status: SessionStatus.DISCONNECTED,
+    });
     prisma.whatsappSession.update.mockResolvedValue({});
 
     const result = await service.init('ws-1', 's1');
@@ -84,12 +97,42 @@ describe('SessionsService', () => {
     expect(initQueue.add).toHaveBeenCalledWith('init', { sessionId: 's1' });
   });
 
-  it('disconnect clears session state', async () => {
+  it('init skips when already connecting', async () => {
+    prisma.whatsappSession.findFirst.mockResolvedValue({
+      id: 's1',
+      workspaceId: 'ws-1',
+      status: SessionStatus.CONNECTING,
+    });
+
+    const result = await service.init('ws-1', 's1');
+    expect(result.status).toBe('connecting');
+    expect(initQueue.add).not.toHaveBeenCalled();
+  });
+
+  it('disconnect clears session state and api key', async () => {
     prisma.whatsappSession.findFirst.mockResolvedValue({ id: 's1', workspaceId: 'ws-1' });
     prisma.whatsappSession.update.mockResolvedValue({});
 
     const result = await service.disconnect('ws-1', 's1');
     expect(result.status).toBe('disconnected');
     expect(disconnectQueue.add).toHaveBeenCalledWith('disconnect', { sessionId: 's1' });
+    expect(prisma.whatsappSession.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ apiKeyHash: null, apiKeyPrefix: null }),
+      }),
+    );
+  });
+
+  it('issueApiKey generates key when connected', async () => {
+    prisma.whatsappSession.findUnique.mockResolvedValue({
+      id: 's1',
+      status: SessionStatus.CONNECTED,
+      apiKeyHash: null,
+    });
+    prisma.whatsappSession.update.mockResolvedValue({});
+
+    const key = await service.issueApiKey('s1');
+    expect(key).toMatch(/^sk_live_/);
+    expect(prisma.whatsappSession.update).toHaveBeenCalled();
   });
 });
