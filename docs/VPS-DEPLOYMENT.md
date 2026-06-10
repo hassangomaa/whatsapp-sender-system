@@ -156,10 +156,76 @@ App ports **3010/3011** bind to `127.0.0.1` only — not exposed publicly. Only 
 
 ## 9. Troubleshooting
 
+### `Docker not found`
+
+Install Docker first (does not touch nginx):
+
+```bash
+cd /var/www/whatsapp-sender
+sudo bash scripts/vps/bootstrap.sh
+```
+
+Or install only Docker:
+
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo systemctl enable --now docker
+docker compose version
+```
+
+### `Set a strong JWT_SECRET in .env`
+
+`.env` still has placeholders. Generate secrets:
+
+```bash
+cd /var/www/whatsapp-sender
+bash scripts/vps/gen-env-secrets.sh
+# or manually: openssl rand -hex 32
+nano .env
+```
+
+Ensure `POSTGRES_PASSWORD` matches the password inside `DATABASE_URL`.
+
+### `nginx: location directive is not allowed here` (e.g. altmiz:51)
+
+Another site on the VPS has a broken config. **Certbot and reload will fail until this is fixed.**
+
+```bash
+sudo nginx -t
+sudo sed -n '40,60p' /etc/nginx/sites-enabled/altmiz
+```
+
+Common causes: missing `}`, `location` outside a `server` block, or a bad certbot edit.
+
+Fix the file, then:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d whatsapp.arheb.net -d api.whatsapp.arheb.net
+```
+
+To unblock whatsapp deploy only (temporarily disables altmiz site):
+
+```bash
+sudo rm /etc/nginx/sites-enabled/altmiz
+sudo nginx -t && sudo systemctl reload nginx
+# fix /etc/nginx/sites-available/altmiz, then re-enable
+```
+
+### Correct deploy order on a fresh VPS
+
+1. `git pull` (get latest code)
+2. Fix broken nginx configs (`sudo nginx -t` must pass)
+3. Install Docker (`bootstrap.sh` or get.docker.com)
+4. Set `.env` secrets (`gen-env-secrets.sh`)
+5. `sudo ./deploy-vps.sh full`
+6. Enable nginx site + certbot
+7. `sudo ./deploy-vps.sh test`
+
 | Issue | Fix |
 |-------|-----|
 | DNS not resolving | Wait for propagation; check Hostinger A records |
-| Certbot fails | Ensure port 80 reachable; `nginx -t` passes |
+| Certbot fails | Fix `nginx -t` first; ensure port 80 reachable |
 | CORS errors | `CORS_ORIGIN` must match `https://whatsapp.arheb.net` exactly |
 | Docs show localhost API | Rebuild web: `docker compose -f docker-compose.yml -f docker-compose.prod.yml build web && docker compose up -d web` |
 | QR stream drops | Check nginx `proxy_buffering off` on API server block |

@@ -83,8 +83,15 @@ install_nginx_site() {
   if [ -f "$APP_DIR/nginx/whatsapp-sender.conf" ]; then
     cp "$APP_DIR/nginx/whatsapp-sender.conf" "/etc/nginx/sites-available/$NGINX_SITE"
     ln -sf "/etc/nginx/sites-available/$NGINX_SITE" "/etc/nginx/sites-enabled/$NGINX_SITE"
-    nginx -t && systemctl reload nginx
-    echo "✅ Nginx site enabled: $NGINX_SITE"
+    if nginx -t 2>/dev/null; then
+      systemctl reload nginx
+      echo "✅ Nginx site enabled: $NGINX_SITE"
+    else
+      echo "⚠️  Nginx config test failed — another site may be broken (e.g. altmiz)."
+      echo "    whatsapp-sender config copied to sites-available/$NGINX_SITE"
+      echo "    Fix nginx first: sudo nginx -t"
+      echo "    Then: sudo systemctl reload nginx"
+    fi
   fi
 }
 
