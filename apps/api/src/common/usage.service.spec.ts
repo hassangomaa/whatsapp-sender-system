@@ -28,7 +28,7 @@ describe('UsageService', () => {
   };
 
   const platformConfig = {
-    isPlatformWorkspace: jest.fn().mockResolvedValue(false),
+    isUnlimitedWorkspace: jest.fn().mockResolvedValue(false),
   };
 
   const service = new UsageService(
@@ -40,7 +40,7 @@ describe('UsageService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    platformConfig.isPlatformWorkspace.mockResolvedValue(false);
+    platformConfig.isUnlimitedWorkspace.mockResolvedValue(false);
   });
 
   it('returns remaining quota', async () => {
@@ -61,14 +61,25 @@ describe('UsageService', () => {
     expect(adminNotify.notify).toHaveBeenCalled();
   });
 
-  it('bypasses quota for platform workspace', async () => {
-    platformConfig.isPlatformWorkspace.mockResolvedValue(true);
+  it('bypasses quota for unlimited workspace (platform admin)', async () => {
+    platformConfig.isUnlimitedWorkspace.mockResolvedValue(true);
     prisma.usageCounter.findUnique.mockResolvedValue({
       messagesSent: 30,
       messageLimit: 30,
     });
-    await expect(service.assertCanSend('ws-platform')).resolves.toBeDefined();
+    await expect(service.assertCanSend('ws-admin')).resolves.toBeDefined();
     expect(adminNotify.notify).not.toHaveBeenCalled();
+  });
+
+  it('returns unlimited usage stats for admin workspace', async () => {
+    platformConfig.isUnlimitedWorkspace.mockResolvedValue(true);
+    prisma.usageCounter.findUnique.mockResolvedValue({
+      messagesSent: 100,
+      messageLimit: 30,
+    });
+    const usage = await service.getUsage('ws-admin');
+    expect(usage.planName).toBe('Unlimited');
+    expect(usage.remaining).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('blocks session creation when at plan limit', async () => {
@@ -87,10 +98,10 @@ describe('UsageService', () => {
     await expect(service.assertCanCreateSession('ws-1')).resolves.toBeUndefined();
   });
 
-  it('bypasses session limit for platform workspace', async () => {
-    platformConfig.isPlatformWorkspace.mockResolvedValue(true);
+  it('bypasses session limit for unlimited workspace', async () => {
+    platformConfig.isUnlimitedWorkspace.mockResolvedValue(true);
     prisma.whatsappSession.count.mockResolvedValue(99);
-    await expect(service.assertCanCreateSession('ws-platform')).resolves.toBeUndefined();
+    await expect(service.assertCanCreateSession('ws-admin')).resolves.toBeUndefined();
     expect(adminNotify.notify).not.toHaveBeenCalled();
   });
 });

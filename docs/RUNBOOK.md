@@ -121,7 +121,7 @@ Ensure `.env` has `CORS_ORIGIN=https://whatsapp.arheb.net` and `NEXT_PUBLIC_API_
 5. Set **Admin alert phone** to `966508334708` (Saudi) for WhatsApp audit alerts.
 6. Optional: `bash scripts/smoke-admin-platform.sh` (requires admin login credentials).
 
-**Platform workspace is unlimited** (no message/session quota). Client workspaces are limited per plan.
+**Platform admin workspaces are unlimited** — any workspace owned by an email in `PLATFORM_ADMIN_EMAILS` (including the Platform OTP workspace) has no message or session quota. Client workspaces are limited per plan.
 
 **WhatsApp audit alerts** (to admin phone, when enabled):
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import Redis from 'ioredis';
-import { DEFAULT_ADMIN_PHONE, PlatformConfigCache, REDIS_KEYS } from '@whatsapp-sender/contracts';
+import { DEFAULT_ADMIN_PHONE, PlatformConfigCache, REDIS_KEYS, isPlatformAdminEmail } from '@whatsapp-sender/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 
 const PLATFORM_ID = 'platform';
@@ -109,6 +109,18 @@ export class PlatformConfigService {
     return Boolean(platformId && platformId === workspaceId);
   }
 
+  /** Platform workspace or any workspace owned by a PLATFORM_ADMIN_EMAILS user. */
+  async isUnlimitedWorkspace(workspaceId: string): Promise<boolean> {
+    if (await this.isPlatformWorkspace(workspaceId)) {
+      return true;
+    }
+    const workspace = await this.prisma.client.workspace.findUnique({
+      where: { id: workspaceId },
+      include: { owner: { select: { email: true } } },
+    });
+    return isPlatformAdminEmail(workspace?.owner?.email);
+  }
+
   private async ensureRow() {
     const existing = await this.prisma.client.platformSettings.findUnique({
       where: { id: PLATFORM_ID },
@@ -194,12 +206,4 @@ export class PlatformConfigService {
   }
 }
 
-export function isPlatformAdminEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const allowlist = (process.env.PLATFORM_ADMIN_EMAILS ?? '')
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  if (allowlist.length === 0) return false;
-  return allowlist.includes(email.toLowerCase());
-}
+export { isPlatformAdminEmail } from '@whatsapp-sender/contracts';

@@ -160,8 +160,8 @@ export class SessionManager {
             where: { id: sessionId },
           });
           if (sessionRow) {
-            const { isPlatformWorkspace } = await import('./platform-workspace');
-            if (!(await isPlatformWorkspace(sessionRow.workspaceId))) {
+            const { isUnlimitedWorkspace } = await import('./platform-workspace');
+            if (!(await isUnlimitedWorkspace(sessionRow.workspaceId))) {
               const { loadClientAuditContext, formatWorkerSessionConnected } = await import(
                 './admin-audit'
               );

@@ -88,8 +88,8 @@ async function markMessageSent(messageId: string, externalId?: string) {
     include: { session: true },
   });
 
-  const { isPlatformWorkspace } = await import('./platform-workspace');
-  if (await isPlatformWorkspace(message.workspaceId)) {
+  const { isUnlimitedWorkspace } = await import('./platform-workspace');
+  if (await isUnlimitedWorkspace(message.workspaceId)) {
     if (message.session.webhookUrl && message.session.scopeWebhook) {
       await scheduleWebhook(message.session.webhookUrl, message.workspaceId, message.sessionId, message.id, {
         event: 'message.sent',

@@ -31,6 +31,19 @@ export class UsageService {
   }
 
   async getUsage(workspaceId: string) {
+    if (await this.platformConfig.isUnlimitedWorkspace(workspaceId)) {
+      const usage = await this.prisma.client.usageCounter.findUnique({
+        where: { workspaceId },
+      });
+      return {
+        messagesSent: usage?.messagesSent ?? 0,
+        messageLimit: Number.MAX_SAFE_INTEGER,
+        remaining: Number.MAX_SAFE_INTEGER,
+        maxSessions: Number.MAX_SAFE_INTEGER,
+        planName: 'Unlimited',
+      };
+    }
+
     const usage = await this.prisma.client.usageCounter.findUnique({
       where: { workspaceId },
     });
@@ -46,7 +59,7 @@ export class UsageService {
   }
 
   async assertCanSend(workspaceId: string) {
-    if (await this.platformConfig.isPlatformWorkspace(workspaceId)) {
+    if (await this.platformConfig.isUnlimitedWorkspace(workspaceId)) {
       return this.getUsage(workspaceId);
     }
 
@@ -72,7 +85,7 @@ export class UsageService {
   }
 
   async assertCanCreateSession(workspaceId: string) {
-    if (await this.platformConfig.isPlatformWorkspace(workspaceId)) {
+    if (await this.platformConfig.isUnlimitedWorkspace(workspaceId)) {
       return;
     }
 
@@ -100,7 +113,7 @@ export class UsageService {
   }
 
   async incrementUsage(workspaceId: string, count = 1) {
-    if (await this.platformConfig.isPlatformWorkspace(workspaceId)) {
+    if (await this.platformConfig.isUnlimitedWorkspace(workspaceId)) {
       return;
     }
     await this.prisma.client.usageCounter.upsert({

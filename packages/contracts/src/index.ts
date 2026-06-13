@@ -5,3 +5,4 @@ export * from './queues';
 export * from './types';
 export * from './whatsapp';
 export * from './admin-audit';
+export * from './platform-admin';

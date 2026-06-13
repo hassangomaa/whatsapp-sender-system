@@ -21,6 +21,7 @@ describe('PlatformConfigService', () => {
       },
       workspace: {
         findFirst: jest.fn(),
+        findUnique: jest.fn(),
         create: jest.fn(),
       },
       plan: { findUnique: jest.fn().mockResolvedValue({ id: 'plan-1', messageLimit: 30 }) },
@@ -67,6 +68,31 @@ describe('PlatformConfigService', () => {
     });
     const id = await service.ensurePlatformWorkspace('user-1');
     expect(id).toBe('existing-ws');
+  });
+
+  it('isUnlimitedWorkspace for platform workspace id', async () => {
+    prisma.client.platformSettings.findUnique.mockResolvedValue(platformRow);
+    await expect(service.isUnlimitedWorkspace('ws-1')).resolves.toBe(true);
+  });
+
+  it('isUnlimitedWorkspace for admin-owned workspace', async () => {
+    prisma.client.platformSettings.findUnique.mockResolvedValue(platformRow);
+    process.env.PLATFORM_ADMIN_EMAILS = 'admin@test.com';
+    prisma.client.workspace.findUnique.mockResolvedValue({
+      id: 'ws-personal',
+      owner: { email: 'admin@test.com' },
+    });
+    await expect(service.isUnlimitedWorkspace('ws-personal')).resolves.toBe(true);
+  });
+
+  it('isUnlimitedWorkspace false for regular client workspace', async () => {
+    prisma.client.platformSettings.findUnique.mockResolvedValue(platformRow);
+    process.env.PLATFORM_ADMIN_EMAILS = 'admin@test.com';
+    prisma.client.workspace.findUnique.mockResolvedValue({
+      id: 'ws-client',
+      owner: { email: 'client@test.com' },
+    });
+    await expect(service.isUnlimitedWorkspace('ws-client')).resolves.toBe(false);
   });
 });
 
