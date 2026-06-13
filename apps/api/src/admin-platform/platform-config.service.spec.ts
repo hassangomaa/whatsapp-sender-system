@@ -40,6 +40,7 @@ describe('PlatformConfigService', () => {
     prisma.client.platformSettings.findUnique.mockResolvedValue(platformRow);
     const config = await service.getConfig();
     expect(config.otpSessionId).toBe('sess-otp');
+    expect(config.platformWorkspaceId).toBe('ws-1');
     expect(redis.set).toHaveBeenCalled();
   });
 

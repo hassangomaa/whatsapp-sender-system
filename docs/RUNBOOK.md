@@ -118,7 +118,19 @@ Ensure `.env` has `CORS_ORIGIN=https://whatsapp.arheb.net` and `NEXT_PUBLIC_API_
 2. Login at `/login` with that email → open **Platform admin** at `/admin`.
 3. Create a session in the platform workspace → **Init / QR** → scan with WhatsApp.
 4. Select it as **OTP sender session** → Save.
-5. Optional: `bash scripts/smoke-admin-platform.sh` (requires admin login credentials).
+5. Set **Admin alert phone** to `966508334708` (Saudi) for WhatsApp audit alerts.
+6. Optional: `bash scripts/smoke-admin-platform.sh` (requires admin login credentials).
+
+**Platform workspace is unlimited** (no message/session quota). Client workspaces are limited per plan.
+
+**WhatsApp audit alerts** (to admin phone, when enabled):
+
+| Event | Trigger |
+|-------|---------|
+| New signup | OTP register completes |
+| Session connected | Client session fully linked (not platform OTP session) |
+| Quota exhausted | Client blocked or last message uses final quota |
+| Session limit | Client cannot create more sessions |
 
 Env vars `OTP_SESSION_ID` / `ADMIN_NOTIFY_SESSION_ID` remain as fallback until configured in the dashboard.
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import Redis from 'ioredis';
-import { PlatformConfigCache, REDIS_KEYS } from '@whatsapp-sender/contracts';
+import { DEFAULT_ADMIN_PHONE, PlatformConfigCache, REDIS_KEYS } from '@whatsapp-sender/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 
 const PLATFORM_ID = 'platform';
@@ -61,6 +61,7 @@ export class PlatformConfigService {
         where: { id: PLATFORM_ID },
         data: { platformWorkspaceId: existing.id },
       });
+      await this.publishCacheFromRow({ ...row, platformWorkspaceId: existing.id });
       return existing.id;
     }
 
@@ -87,6 +88,7 @@ export class PlatformConfigService {
       where: { id: PLATFORM_ID },
       data: { platformWorkspaceId: workspace.id },
     });
+    await this.publishCacheFromRow({ ...row, platformWorkspaceId: workspace.id });
     return workspace.id;
   }
 
@@ -97,16 +99,30 @@ export class PlatformConfigService {
     return session ?? null;
   }
 
+  async getPlatformWorkspaceId(): Promise<string | null> {
+    const row = await this.ensureRow();
+    return row.platformWorkspaceId;
+  }
+
+  async isPlatformWorkspace(workspaceId: string): Promise<boolean> {
+    const platformId = await this.getPlatformWorkspaceId();
+    return Boolean(platformId && platformId === workspaceId);
+  }
+
   private async ensureRow() {
     const existing = await this.prisma.client.platformSettings.findUnique({
       where: { id: PLATFORM_ID },
     });
     if (existing) {
-      if (
-        !existing.otpSessionId &&
-        !existing.adminNotifySessionId &&
-        !existing.adminPhone
-      ) {
+      if (!existing.adminPhone) {
+        const updated = await this.prisma.client.platformSettings.update({
+          where: { id: existing.id },
+          data: { adminPhone: this.defaultAdminPhone() },
+        });
+        await this.publishCache(this.rowToCache(updated));
+        return updated;
+      }
+      if (!existing.otpSessionId && !existing.adminNotifySessionId) {
         return this.seedFromEnv(existing.id);
       }
       return existing;
@@ -120,10 +136,14 @@ export class PlatformConfigService {
           process.env.ADMIN_NOTIFY_SESSION_ID?.trim() ||
           process.env.OTP_SESSION_ID?.trim() ||
           null,
-        adminPhone: process.env.ADMIN_PHONE?.trim() || null,
+        adminPhone: process.env.ADMIN_PHONE?.trim() || DEFAULT_ADMIN_PHONE,
         adminNotifyEnabled: process.env.ADMIN_NOTIFY_ENABLED !== '0',
       },
     });
+  }
+
+  private defaultAdminPhone() {
+    return process.env.ADMIN_PHONE?.trim() || DEFAULT_ADMIN_PHONE;
   }
 
   private async seedFromEnv(id: string) {
@@ -135,7 +155,7 @@ export class PlatformConfigService {
           process.env.ADMIN_NOTIFY_SESSION_ID?.trim() ||
           process.env.OTP_SESSION_ID?.trim() ||
           null,
-        adminPhone: process.env.ADMIN_PHONE?.trim() || null,
+        adminPhone: this.defaultAdminPhone(),
         adminNotifyEnabled: process.env.ADMIN_NOTIFY_ENABLED !== '0',
       },
     });
@@ -143,16 +163,28 @@ export class PlatformConfigService {
     return updated;
   }
 
+  private publishCacheFromRow(row: {
+    platformWorkspaceId: string | null;
+    otpSessionId: string | null;
+    adminNotifySessionId: string | null;
+    adminPhone: string | null;
+    adminNotifyEnabled: boolean;
+  }) {
+    return this.publishCache(this.rowToCache(row));
+  }
+
   private rowToCache(row: {
+    platformWorkspaceId?: string | null;
     otpSessionId: string | null;
     adminNotifySessionId: string | null;
     adminPhone: string | null;
     adminNotifyEnabled: boolean;
   }): PlatformConfigCache {
     return {
+      platformWorkspaceId: row.platformWorkspaceId ?? null,
       otpSessionId: row.otpSessionId,
       adminNotifySessionId: row.adminNotifySessionId,
-      adminPhone: row.adminPhone,
+      adminPhone: row.adminPhone ?? DEFAULT_ADMIN_PHONE,
       adminNotifyEnabled: row.adminNotifyEnabled,
     };
   }

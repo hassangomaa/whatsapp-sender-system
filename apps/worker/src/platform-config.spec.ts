@@ -27,6 +27,7 @@ describe('platform-config', () => {
     process.env.ADMIN_NOTIFY_SESSION_ID = 'admin-1';
     process.env.ADMIN_PHONE = '966508334708';
     expect(configFromEnv()).toEqual({
+      platformWorkspaceId: null,
       otpSessionId: 'otp-1',
       adminNotifySessionId: 'admin-1',
       adminPhone: '966508334708',
@@ -42,6 +43,7 @@ describe('platform-config', () => {
     const redis = {
       get: jest.fn().mockResolvedValue(
         JSON.stringify({
+          platformWorkspaceId: 'ws-platform',
           otpSessionId: 'cached-otp',
           adminNotifySessionId: 'cached-admin',
           adminPhone: '201000',
@@ -62,6 +64,6 @@ describe('platform-config', () => {
 
   it('resolveAdminPhone falls back to default', async () => {
     const redis = { get: jest.fn().mockResolvedValue(null) };
-    await expect(resolveAdminPhone(redis)).resolves.toBe('201277785111');
+    await expect(resolveAdminPhone(redis)).resolves.toBe('966508334708');
   });
 });

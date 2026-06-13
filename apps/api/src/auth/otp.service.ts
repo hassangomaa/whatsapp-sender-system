@@ -73,14 +73,13 @@ export class OtpService {
         },
       });
       const workspace = await this.auth.bootstrapWorkspaceForUser(user.id, user.name ?? phone);
+      const ctx = await this.adminNotify.auditService.loadContext(workspace.id);
+      ctx.ownerPhone = phone;
+      ctx.ownerName = user.name;
+      ctx.ownerEmail = user.email;
       await this.adminNotify.notify({
         event: 'register',
-        message: this.adminNotify.formatRegister({
-          phone,
-          name: user.name,
-          email: user.email,
-          workspaceId: workspace.id,
-        }),
+        message: this.adminNotify.auditService.formatRegister(ctx),
         workspaceId: workspace.id,
         dedupeKey: `register:${user.id}`,
       });

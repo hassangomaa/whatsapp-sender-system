@@ -18,7 +18,16 @@ describe('OtpService', () => {
     buildAuthResponse: jest.fn().mockReturnValue({ token: 'jwt', user: {}, workspaceId: 'ws-1' }),
   };
 
-  const adminNotify = { notify: jest.fn(), formatRegister: jest.fn().mockReturnValue('msg') };
+  const adminNotify = {
+    notify: jest.fn(),
+    auditService: {
+      loadContext: jest.fn().mockResolvedValue({
+        workspaceId: 'ws-1',
+        workspaceName: 'Test',
+      }),
+      formatRegister: jest.fn().mockReturnValue('msg'),
+    },
+  };
   const otpQueue = { add: jest.fn() };
   const jwt = { sign: jest.fn() };
 

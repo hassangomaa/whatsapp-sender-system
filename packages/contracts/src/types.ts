@@ -1,8 +1,10 @@
 export interface SendMessageJob {
   messageId: string;
   sessionId: string;
+  /** Phone digits or full JID (group / newsletter) */
   phoneNumber: string;
   content: string;
+  recipientKind?: 'phone' | 'group' | 'newsletter';
 }
 
 export interface SendMediaJob {
@@ -13,6 +15,7 @@ export interface SendMediaJob {
   mediaUrl?: string;
   mediaBase64?: string;
   caption?: string;
+  recipientKind?: 'phone' | 'group' | 'newsletter';
 }
 
 export interface SessionInitJob {

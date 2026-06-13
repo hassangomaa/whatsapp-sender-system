@@ -1,6 +1,9 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { formatAuditQuotaExhausted, formatAuditSessionLimit } from '@whatsapp-sender/contracts';
 import { PrismaService } from '../prisma/prisma.service';
+import { PlatformConfigService } from '../admin-platform/platform-config.service';
 import { AdminNotifyService } from '../admin-notify/admin-notify.service';
+import { AdminAuditService } from '../admin-notify/admin-audit.service';
 
 const DEFAULT_TRIAL_LIMIT = 30;
 const DEFAULT_MAX_SESSIONS = 1;
@@ -10,6 +13,8 @@ export class UsageService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly adminNotify: AdminNotifyService,
+    private readonly audit: AdminAuditService,
+    private readonly platformConfig: PlatformConfigService,
   ) {}
 
   async getPlanLimits(workspaceId: string) {
@@ -41,15 +46,19 @@ export class UsageService {
   }
 
   async assertCanSend(workspaceId: string) {
+    if (await this.platformConfig.isPlatformWorkspace(workspaceId)) {
+      return this.getUsage(workspaceId);
+    }
+
     const usage = await this.getUsage(workspaceId);
     if (usage.remaining <= 0) {
+      const ctx = await this.audit.loadContext(workspaceId);
+      ctx.messagesUsed = usage.messagesSent;
+      ctx.messageLimit = usage.messageLimit;
+      ctx.planName = usage.planName;
       await this.adminNotify.notify({
         event: 'quota_exhausted',
-        message: this.adminNotify.formatQuotaExhausted({
-          workspaceId,
-          used: usage.messagesSent,
-          limit: usage.messageLimit,
-        }),
+        message: formatAuditQuotaExhausted(ctx),
         workspaceId,
         dedupeKey: `quota:${workspaceId}`,
       });
@@ -63,18 +72,22 @@ export class UsageService {
   }
 
   async assertCanCreateSession(workspaceId: string) {
+    if (await this.platformConfig.isPlatformWorkspace(workspaceId)) {
+      return;
+    }
+
     const limits = await this.getPlanLimits(workspaceId);
     const count = await this.prisma.client.whatsappSession.count({
       where: { workspaceId },
     });
     if (count >= limits.maxSessions) {
+      const ctx = await this.audit.loadContext(workspaceId);
+      ctx.sessionsUsed = count;
+      ctx.maxSessions = limits.maxSessions;
+      ctx.planName = limits.planName;
       await this.adminNotify.notify({
         event: 'session_limit',
-        message: this.adminNotify.formatSessionLimit({
-          workspaceId,
-          used: count,
-          max: limits.maxSessions,
-        }),
+        message: formatAuditSessionLimit(ctx),
         workspaceId,
         dedupeKey: `session-limit:${workspaceId}`,
       });
@@ -87,6 +100,9 @@ export class UsageService {
   }
 
   async incrementUsage(workspaceId: string, count = 1) {
+    if (await this.platformConfig.isPlatformWorkspace(workspaceId)) {
+      return;
+    }
     await this.prisma.client.usageCounter.upsert({
       where: { workspaceId },
       create: { workspaceId, messagesSent: count, messageLimit: 30 },

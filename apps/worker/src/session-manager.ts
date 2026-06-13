@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import QRCode from 'qrcode';
 import { prisma, SessionStatus } from '@whatsapp-sender/database';
-import { WHATSAPP_QR_REFRESH_SECONDS } from '@whatsapp-sender/contracts';
+import { WHATSAPP_QR_REFRESH_SECONDS, buildMessageJid } from '@whatsapp-sender/contracts';
 import { publishSessionEvent, refreshSessionLive, setSessionLive } from './redis';
 import { issueApiKeyIfNeeded } from './issue-api-key';
 import { enqueueAdminNotify } from './admin-notify-queue';
@@ -160,12 +160,22 @@ export class SessionManager {
             where: { id: sessionId },
           });
           if (sessionRow) {
-            await enqueueAdminNotify({
-              event: 'session_connected',
-              message: `Session linked: ${sessionRow.name} +${phone} — workspace ${sessionRow.workspaceId}`,
-              workspaceId: sessionRow.workspaceId,
-              dedupeKey: `connect:${sessionId}`,
-            });
+            const { isPlatformWorkspace } = await import('./platform-workspace');
+            if (!(await isPlatformWorkspace(sessionRow.workspaceId))) {
+              const { loadClientAuditContext, formatWorkerSessionConnected } = await import(
+                './admin-audit'
+              );
+              const ctx = await loadClientAuditContext(sessionRow.workspaceId);
+              await enqueueAdminNotify({
+                event: 'session_connected',
+                message: formatWorkerSessionConnected(ctx, {
+                  sessionName: sessionRow.name,
+                  sessionPhone: phone,
+                }),
+                workspaceId: sessionRow.workspaceId,
+                dedupeKey: `connect:${sessionId}`,
+              });
+            }
           }
 
           await publishSessionEvent(sessionId, {
@@ -288,7 +298,7 @@ export class SessionManager {
     });
   }
 
-  async sendText(sessionId: string, phoneNumber: string, content: string) {
+  async sendText(sessionId: string, recipient: string, content: string) {
     if (process.env.BAILEYS_MOCK === '1') {
       return { id: `mock-${Date.now()}` };
     }
@@ -298,14 +308,84 @@ export class SessionManager {
       this.ensureReconnect(sessionId);
       throw new Error('Session not connected');
     }
-    const jid = `${phoneNumber}@s.whatsapp.net`;
+    const jid = buildMessageJid(recipient);
     const result = await sock.sendMessage(jid, { text: content });
     return { id: result?.key?.id ?? `msg-${Date.now()}` };
   }
 
+  async listGroups(sessionId: string) {
+    if (process.env.BAILEYS_MOCK === '1') {
+      return [
+        {
+          jid: '120363123456789012@g.us',
+          subject: 'Mock Group',
+          participants: 3,
+        },
+      ];
+    }
+
+    const sock = this.sockets.get(sessionId);
+    if (!sock?.user) {
+      this.ensureReconnect(sessionId);
+      throw new Error('Session not connected');
+    }
+
+    const groups = await sock.groupFetchAllParticipating();
+    return Object.values(groups).map((group) => ({
+      jid: group.id,
+      subject: group.subject ?? '',
+      participants: group.participants?.length ?? 0,
+    }));
+  }
+
+  async joinGroupByInvite(sessionId: string, inviteCode: string): Promise<string> {
+    if (process.env.BAILEYS_MOCK === '1') {
+      return '120363123456789012@g.us';
+    }
+
+    const sock = this.sockets.get(sessionId);
+    if (!sock?.user) {
+      this.ensureReconnect(sessionId);
+      throw new Error('Session not connected');
+    }
+
+    const jid = await sock.groupAcceptInvite(inviteCode);
+    if (!jid) {
+      throw new Error('Failed to join group — already joined or invalid invite');
+    }
+    return jid;
+  }
+
+  async resolveNewsletterInvite(sessionId: string, inviteCode: string) {
+    if (process.env.BAILEYS_MOCK === '1') {
+      return {
+        jid: '1234567890@newsletter',
+        name: 'Mock Channel',
+        subscribers: 1,
+      };
+    }
+
+    const sock = this.sockets.get(sessionId);
+    if (!sock?.user) {
+      this.ensureReconnect(sessionId);
+      throw new Error('Session not connected');
+    }
+
+    const meta = await sock.newsletterMetadata('invite', inviteCode);
+    if (!meta?.id) {
+      throw new Error('Channel not found for invite code');
+    }
+
+    return {
+      jid: meta.id,
+      name: meta.name ?? '',
+      subscribers: meta.subscribers ?? undefined,
+    };
+  }
+
   async sendMedia(
     sessionId: string,
-    phoneNumber: string,
+    recipient: string,
     mediaType: string,
     opts: { mediaUrl?: string; mediaBase64?: string; caption?: string },
   ) {
@@ -318,7 +398,7 @@ export class SessionManager {
       this.ensureReconnect(sessionId);
       throw new Error('Session not connected');
     }
-    const jid = `${phoneNumber}@s.whatsapp.net`;
+    const jid = buildMessageJid(recipient);
     if (mediaType === 'image' && opts.mediaUrl) {
       const result = await sock.sendMessage(jid, {
         image: { url: opts.mediaUrl },

@@ -5,6 +5,9 @@ import {
   SendMediaJob,
   SendMessageJob,
   WebhookDeliverJob,
+  ListGroupsJob,
+  JoinGroupJob,
+  ResolveNewsletterJob,
 } from '@whatsapp-sender/contracts';
 import {
   CampaignRecipientStatus,
@@ -85,6 +88,19 @@ async function markMessageSent(messageId: string, externalId?: string) {
     include: { session: true },
   });
 
+  const { isPlatformWorkspace } = await import('./platform-workspace');
+  if (await isPlatformWorkspace(message.workspaceId)) {
+    if (message.session.webhookUrl && message.session.scopeWebhook) {
+      await scheduleWebhook(message.session.webhookUrl, message.workspaceId, message.sessionId, message.id, {
+        event: 'message.sent',
+        messageId: message.id,
+        phoneNumber: message.phoneNumber,
+        status: 'sent',
+      });
+    }
+    return;
+  }
+
   const usage = await prisma.usageCounter.update({
     where: { workspaceId: message.workspaceId },
     data: { messagesSent: { increment: 1 } },
@@ -92,9 +108,13 @@ async function markMessageSent(messageId: string, externalId?: string) {
 
   const remaining = usage.messageLimit - usage.messagesSent;
   if (remaining <= 0) {
+    const { loadClientAuditContext, formatWorkerQuotaExhausted } = await import('./admin-audit');
+    const ctx = await loadClientAuditContext(message.workspaceId);
+    ctx.messagesUsed = usage.messagesSent;
+    ctx.messageLimit = usage.messageLimit;
     await enqueueAdminNotify({
       event: 'quota_exhausted',
-      message: `Quota exhausted: workspace ${message.workspaceId} (${usage.messagesSent}/${usage.messageLimit})`,
+      message: formatWorkerQuotaExhausted(ctx),
       workspaceId: message.workspaceId,
       dedupeKey: `quota:${message.workspaceId}`,
     });
@@ -149,6 +169,31 @@ export function startWorkers() {
       await deliverWebhook(job.data);
     },
     { connection, concurrency: 3 },
+  );
+
+  new Worker(
+    QUEUES.SESSION_JOIN_GROUP,
+    async (job: Job<JoinGroupJob>) => {
+      const jid = await sessionManager.joinGroupByInvite(job.data.sessionId, job.data.inviteCode);
+      return { jid };
+    },
+    { connection, concurrency: 2 },
+  );
+
+  new Worker(
+    QUEUES.SESSION_RESOLVE_NEWSLETTER,
+    async (job: Job<ResolveNewsletterJob>) => {
+      return sessionManager.resolveNewsletterInvite(job.data.sessionId, job.data.inviteCode);
+    },
+    { connection, concurrency: 2 },
+  );
+
+  new Worker(
+    QUEUES.SESSION_LIST_GROUPS,
+    async (job: Job<ListGroupsJob>) => {
+      return sessionManager.listGroups(job.data.sessionId);
+    },
+    { connection, concurrency: 2 },
   );
 
   new Worker(

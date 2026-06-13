@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import { PlatformConfigCache, REDIS_KEYS } from '@whatsapp-sender/contracts';
+import { DEFAULT_ADMIN_PHONE, PlatformConfigCache, REDIS_KEYS } from '@whatsapp-sender/contracts';
 
 export type PlatformSessionPurpose = 'otp' | 'admin_notify';
 
@@ -20,9 +20,10 @@ export function configFromEnv(): PlatformConfigCache {
   const adminNotifySessionId =
     process.env.ADMIN_NOTIFY_SESSION_ID?.trim() || otpSessionId;
   return {
+    platformWorkspaceId: null,
     otpSessionId,
     adminNotifySessionId,
-    adminPhone: process.env.ADMIN_PHONE?.trim() || null,
+    adminPhone: process.env.ADMIN_PHONE?.trim() || DEFAULT_ADMIN_PHONE,
     adminNotifyEnabled: process.env.ADMIN_NOTIFY_ENABLED !== '0',
   };
 }
@@ -32,9 +33,10 @@ export function parsePlatformConfig(raw: string | null): PlatformConfigCache | n
   try {
     const parsed = JSON.parse(raw) as Partial<PlatformConfigCache>;
     return {
+      platformWorkspaceId: parsed.platformWorkspaceId ?? null,
       otpSessionId: parsed.otpSessionId ?? null,
       adminNotifySessionId: parsed.adminNotifySessionId ?? null,
-      adminPhone: parsed.adminPhone ?? null,
+      adminPhone: parsed.adminPhone ?? DEFAULT_ADMIN_PHONE,
       adminNotifyEnabled: parsed.adminNotifyEnabled !== false,
     };
   } catch {
@@ -71,7 +73,7 @@ export async function resolveAdminPhone(
   client: Pick<Redis, 'get'> = getRedis(),
 ): Promise<string> {
   const config = await loadPlatformConfig(client);
-  return config.adminPhone ?? process.env.ADMIN_PHONE ?? '201277785111';
+  return config.adminPhone ?? process.env.ADMIN_PHONE ?? DEFAULT_ADMIN_PHONE;
 }
 
 export async function isAdminNotifyEnabled(
