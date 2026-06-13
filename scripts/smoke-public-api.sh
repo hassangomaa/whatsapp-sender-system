@@ -70,6 +70,86 @@ if [[ "$HTTP_CODE" != "201" && "$HTTP_CODE" != "200" ]]; then
 fi
 echo "OK: $BODY"
 
+echo "==> List groups"
+GROUPS=$(curl -s -w "\n%{http_code}" -X GET "$API_URL/api/v1/whatsapp/public/groups" \
+  -H "x-api-key: $API_KEY")
+GROUPS_CODE=$(echo "$GROUPS" | tail -n1)
+GROUPS_BODY=$(echo "$GROUPS" | sed '$d')
+if [[ "$GROUPS_CODE" != "200" ]]; then
+  echo "FAIL: list groups HTTP $GROUPS_CODE — $GROUPS_BODY"
+  exit 1
+fi
+echo "OK: $GROUPS_BODY"
+
+echo "==> Join group (mock invite)"
+JOIN=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/api/v1/whatsapp/public/groups/join" \
+  -H 'Content-Type: application/json' \
+  -H "x-api-key: $API_KEY" \
+  -d '{"inviteCode":"https://chat.whatsapp.com/JY1ehL8WjDT5iCnCej4UiM"}')
+JOIN_CODE=$(echo "$JOIN" | tail -n1)
+JOIN_BODY=$(echo "$JOIN" | sed '$d')
+if [[ "$JOIN_CODE" != "200" ]]; then
+  echo "FAIL: join group HTTP $JOIN_CODE — $JOIN_BODY"
+  exit 1
+fi
+GROUP_JID=$(echo "$JOIN_BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['jid'])")
+echo "OK: joined $GROUP_JID"
+
+echo "==> Send group message"
+GROUP_SEND=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/api/v1/whatsapp/public/groups/message/send" \
+  -H 'Content-Type: application/json' \
+  -H "x-api-key: $API_KEY" \
+  -H 'Idempotency-Key: smoke-group-001' \
+  -d "{\"groupJid\":\"$GROUP_JID\",\"content\":\"Smoke test group message\"}")
+GROUP_SEND_CODE=$(echo "$GROUP_SEND" | tail -n1)
+GROUP_SEND_BODY=$(echo "$GROUP_SEND" | sed '$d')
+if [[ "$GROUP_SEND_CODE" != "200" ]]; then
+  echo "FAIL: group send HTTP $GROUP_SEND_CODE — $GROUP_SEND_BODY"
+  exit 1
+fi
+echo "OK: $GROUP_SEND_BODY"
+
+echo "==> Resolve channel (mock invite)"
+CHANNEL=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/api/v1/whatsapp/public/channels/resolve" \
+  -H 'Content-Type: application/json' \
+  -H "x-api-key: $API_KEY" \
+  -d '{"inviteCode":"https://whatsapp.com/channel/0029VbDBuwIHbFVD3rXDzs3l"}')
+CHANNEL_CODE=$(echo "$CHANNEL" | tail -n1)
+CHANNEL_BODY=$(echo "$CHANNEL" | sed '$d')
+if [[ "$CHANNEL_CODE" != "200" ]]; then
+  echo "FAIL: resolve channel HTTP $CHANNEL_CODE — $CHANNEL_BODY"
+  exit 1
+fi
+NEWSLETTER_JID=$(echo "$CHANNEL_BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['channel']['jid'])")
+echo "OK: resolved $NEWSLETTER_JID"
+
+echo "==> Send channel message"
+CHANNEL_SEND=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/api/v1/whatsapp/public/channels/message/send" \
+  -H 'Content-Type: application/json' \
+  -H "x-api-key: $API_KEY" \
+  -H 'Idempotency-Key: smoke-channel-001' \
+  -d "{\"newsletterJid\":\"$NEWSLETTER_JID\",\"content\":\"Smoke test channel message\"}")
+CHANNEL_SEND_CODE=$(echo "$CHANNEL_SEND" | tail -n1)
+CHANNEL_SEND_BODY=$(echo "$CHANNEL_SEND" | sed '$d')
+if [[ "$CHANNEL_SEND_CODE" != "200" ]]; then
+  echo "FAIL: channel send HTTP $CHANNEL_SEND_CODE — $CHANNEL_SEND_BODY"
+  exit 1
+fi
+echo "OK: $CHANNEL_SEND_BODY"
+
+echo "==> Send group message via invite link (one-step)"
+INVITE_SEND=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/api/v1/whatsapp/public/groups/message/send" \
+  -H 'Content-Type: application/json' \
+  -H "x-api-key: $API_KEY" \
+  -H 'Idempotency-Key: smoke-group-invite-001' \
+  -d '{"inviteCode":"https://chat.whatsapp.com/JY1ehL8WjDT5iCnCej4UiM","content":"One-step group send"}')
+INVITE_SEND_CODE=$(echo "$INVITE_SEND" | tail -n1)
+if [[ "$INVITE_SEND_CODE" != "200" ]]; then
+  echo "FAIL: invite group send HTTP $INVITE_SEND_CODE"
+  exit 1
+fi
+echo "OK: one-step group send"
+
 echo "==> Enable webhook scope"
 curl -sf -X PATCH "$API_URL/api/v1/sessions/$SESSION_ID/scopes" \
   -H "Authorization: Bearer $TOKEN" \

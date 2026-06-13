@@ -10,7 +10,9 @@ import { getApiUrl, getWebUrl, API_ENDPOINTS } from '@/lib/config';
 
 const SECTIONS = [
   { id: 'auth', label: 'Authentication' },
-  { id: 'send', label: 'Send message' },
+  { id: 'send', label: 'Send (1:1)' },
+  { id: 'groups', label: 'Groups' },
+  { id: 'channels', label: 'Channels' },
   { id: 'media', label: 'Media send' },
   { id: 'webhooks', label: 'Webhooks' },
   { id: 'limits', label: 'Quota & limits' },
@@ -27,6 +29,22 @@ export default function DocsPage() {
   -H 'x-api-key: sk_live_<your_session_key>' \\
   -H 'Idempotency-Key: order-123-whatsapp' \\
   -d '{"phoneNumber":"201277785111","content":"Hello from API"}'`,
+    [apiUrl],
+  );
+
+  const groupSendExample = useMemo(
+    () => `curl -X POST '${apiUrl}${API_ENDPOINTS.groupsMessageSend}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'x-api-key: sk_live_<your_session_key>' \\
+  -d '{"inviteCode":"https://chat.whatsapp.com/JY1ehL8WjDT5iCnCej4UiM","content":"Hello group"}'`,
+    [apiUrl],
+  );
+
+  const channelSendExample = useMemo(
+    () => `curl -X POST '${apiUrl}${API_ENDPOINTS.channelsMessageSend}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'x-api-key: sk_live_<your_session_key>' \\
+  -d '{"inviteCode":"https://whatsapp.com/channel/0029VbDBuwIHbFVD3rXDzs3l","content":"New channel post"}'`,
     [apiUrl],
   );
 
@@ -92,7 +110,43 @@ export default function DocsPage() {
             <h2 className="font-semibold text-lg">POST {API_ENDPOINTS.send}</h2>
             <CopyButton text={sendExample} label="Copy curl" />
           </div>
+          <p className="text-sm text-[var(--muted)]">Send a text message to a single phone number.</p>
           <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{sendExample}</pre>
+        </section>
+
+        <section id="groups" className="card p-6 space-y-4 scroll-mt-6">
+          <h2 className="font-semibold text-lg">Groups</h2>
+          <p className="text-sm text-[var(--muted)]">
+            Send to a WhatsApp group using <code className="text-xs">groupJid</code> or a full invite link via{' '}
+            <code className="text-xs">inviteCode</code>. The session must be a group member — invite links auto-join before send.
+          </p>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <h3 className="font-medium text-sm">POST {API_ENDPOINTS.groupsMessageSend}</h3>
+            <CopyButton text={groupSendExample} label="Copy curl" />
+          </div>
+          <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{groupSendExample}</pre>
+          <ul className="text-sm space-y-1 list-disc pl-5 text-[var(--muted)]">
+            <li><code className="text-xs">GET {API_ENDPOINTS.groupsList}</code> — list groups the session is in</li>
+            <li><code className="text-xs">POST {API_ENDPOINTS.groupsJoin}</code> — join by invite link (returns group JID)</li>
+            <li><code className="text-xs">POST {API_ENDPOINTS.groupsMediaSend}</code> — send image/media to a group</li>
+          </ul>
+        </section>
+
+        <section id="channels" className="card p-6 space-y-4 scroll-mt-6">
+          <h2 className="font-semibold text-lg">Channels</h2>
+          <p className="text-sm text-[var(--muted)]">
+            Post to a WhatsApp channel using <code className="text-xs">newsletterJid</code> or a channel URL via{' '}
+            <code className="text-xs">inviteCode</code>. The linked WhatsApp account must be a <strong>channel admin</strong> to post.
+          </p>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <h3 className="font-medium text-sm">POST {API_ENDPOINTS.channelsMessageSend}</h3>
+            <CopyButton text={channelSendExample} label="Copy curl" />
+          </div>
+          <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{channelSendExample}</pre>
+          <ul className="text-sm space-y-1 list-disc pl-5 text-[var(--muted)]">
+            <li><code className="text-xs">POST {API_ENDPOINTS.channelsResolve}</code> — resolve channel URL to JID + metadata</li>
+            <li><code className="text-xs">POST {API_ENDPOINTS.channelsMediaSend}</code> — send image/media to a channel</li>
+          </ul>
         </section>
 
         <section id="media" className="card p-6 space-y-4 scroll-mt-6">
@@ -100,6 +154,7 @@ export default function DocsPage() {
             <h2 className="font-semibold text-lg">POST {API_ENDPOINTS.mediaSend}</h2>
             <CopyButton text={mediaExample} label="Copy curl" />
           </div>
+          <p className="text-sm text-[var(--muted)]">1:1 media send. Use group/channel media endpoints for groups and channels.</p>
           <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{mediaExample}</pre>
         </section>
 
@@ -117,7 +172,7 @@ export default function DocsPage() {
           <ul className="list-disc pl-5 text-sm text-[var(--muted)] space-y-1">
             <li><code>403 quota_exhausted</code> — upgrade on <Link href="/packages" className="text-brand">Packages</Link></li>
             <li><code>403 session_limit_reached</code> — plan session cap</li>
-            <li><code>503</code> — session not connected (scan QR first)</li>
+            <li><code>503</code> — session not connected (scan QR first) or group join / channel resolve timeout</li>
           </ul>
         </section>
 

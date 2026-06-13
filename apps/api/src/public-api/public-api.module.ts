@@ -4,17 +4,18 @@ import { QUEUES } from '@whatsapp-sender/contracts';
 import { PublicApiController } from './public-api.controller';
 import { PublicApiService } from './public-api.service';
 import { SessionsModule } from '../sessions/sessions.module';
-import { WebhookService } from '../common/webhook.service';
 
 @Module({
   imports: [
     SessionsModule,
     BullModule.registerQueue(
       { name: QUEUES.SEND_MESSAGE },
-      { name: QUEUES.WEBHOOK_DELIVER },
+      { name: QUEUES.SESSION_LIST_GROUPS },
+      { name: QUEUES.SESSION_JOIN_GROUP },
+      { name: QUEUES.SESSION_RESOLVE_NEWSLETTER },
     ),
   ],
   controllers: [PublicApiController],
-  providers: [PublicApiService, WebhookService],
+  providers: [PublicApiService],
 })
 export class PublicApiModule {}

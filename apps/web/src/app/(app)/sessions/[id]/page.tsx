@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api, getToken } from '@/lib/api';
-import { getApiUrl } from '@/lib/config';
+import { getApiUrl, API_ENDPOINTS } from '@/lib/config';
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/LoadingState';
 import { CopyButton } from '@/components/CopyButton';
@@ -215,13 +215,23 @@ export default function SessionDetailPage() {
 
   if (!session) return <LoadingState label="Loading session..." />;
 
-  const sendUrl = `${getApiUrl()}/api/v1/whatsapp/public/message/send`;
+  const sendUrl = `${getApiUrl()}${API_ENDPOINTS.send}`;
+  const groupSendUrl = `${getApiUrl()}${API_ENDPOINTS.groupsMessageSend}`;
+  const channelSendUrl = `${getApiUrl()}${API_ENDPOINTS.channelsMessageSend}`;
   const keyForCurl = apiKey ?? (session.hasApiKey ? `${session.apiKeyPrefix}…` : 'sk_live_<available_after_connect>');
   const curlExample = `curl -X POST '${sendUrl}' \\
   -H 'Content-Type: application/json' \\
   -H 'x-api-key: ${keyForCurl}' \\
   -H 'Idempotency-Key: unique-key-1' \\
   -d '{"phoneNumber":"201277785111","content":"Hello"}'`;
+  const groupCurlExample = `curl -X POST '${groupSendUrl}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'x-api-key: ${keyForCurl}' \\
+  -d '{"inviteCode":"https://chat.whatsapp.com/JY1ehL8WjDT5iCnCej4UiM","content":"Hello group"}'`;
+  const channelCurlExample = `curl -X POST '${channelSendUrl}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'x-api-key: ${keyForCurl}' \\
+  -d '{"inviteCode":"https://whatsapp.com/channel/0029VbDBuwIHbFVD3rXDzs3l","content":"Channel post"}'`;
 
   const statusLabel = connecting && session.status === 'connected'
     ? 'reconnecting'
@@ -412,13 +422,18 @@ export default function SessionDetailPage() {
 
       <div className="card p-5">
         <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
-          <h2 className="font-semibold">API example</h2>
-          {apiKey && <CopyButton text={curlExample} label="Copy curl" />}
+          <h2 className="font-semibold">API examples</h2>
+          {apiKey && <CopyButton text={curlExample} label="Copy 1:1 curl" />}
         </div>
         {!session.hasApiKey && !apiKey && (
           <p className="text-sm text-[var(--muted)] mb-3">API key becomes available after WhatsApp is linked.</p>
         )}
-        <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{curlExample}</pre>
+        <p className="text-xs text-[var(--muted)] mb-2 font-medium">1:1 message</p>
+        <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl mb-4">{curlExample}</pre>
+        <p className="text-xs text-[var(--muted)] mb-2 font-medium">Group message</p>
+        <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl mb-4">{groupCurlExample}</pre>
+        <p className="text-xs text-[var(--muted)] mb-2 font-medium">Channel message</p>
+        <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{channelCurlExample}</pre>
       </div>
     </div>
   );
