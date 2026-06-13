@@ -6,6 +6,7 @@ module.exports = {
   collectCoverageFrom: ['**/*.(t|j)s'],
   coverageDirectory: '../coverage',
   testEnvironment: 'node',
+  forceExit: true,
   moduleNameMapper: {
     '^@whatsapp-sender/database$': '<rootDir>/../../../packages/database/dist/src/index.js',
     '^@whatsapp-sender/contracts$': '<rootDir>/../../../packages/contracts/dist/index.js',

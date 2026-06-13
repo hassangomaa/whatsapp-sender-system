@@ -100,7 +100,9 @@ Apps auto-load `Whatsapp-Bot/.env` even when started from workspace subfolders.
 | `npm run dev` | Dev mode with hot reload (via `scripts/dev.sh`) |
 | `npm run clean` | Clear `.next` / `dist` caches (fixes chunk errors) |
 | `npm run build` | Build all workspaces |
-| `npm run test` | API unit tests (21 tests) |
+| `npm run test` | API + worker unit tests (incl. Nest DI bootstrap) |
+| `npm run ci:check` | **Before every commit/push** — full build + test + wiring lint |
+| `npm run ci:docker` | Build production Docker images (same as VPS) |
 | `npm run test:e2e` | Playwright E2E (login → QR → docs) |
 | `npm run verify` | Build + test + e2e + smoke |
 | `npm run deploy` | Docker Compose production deploy |
@@ -175,6 +177,57 @@ See also [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for generic production checkli
 
 ---
 
+## Development & release workflow
+
+**Goal:** VPS stays stable on first deploy — no 502 API, no DI crashes, no broken login.
+
+### Rules (mandatory)
+
+1. **Never commit or push before `npm run ci:check` passes locally.**
+2. **Commit feature by feature** — one logical change per commit, push after each green check.
+3. **Deploy to VPS only after GitHub Actions CI is green** on that commit.
+
+Cursor agents: read [AGENTS.md](AGENTS.md) and `.cursor/skills/ship-stable/SKILL.md`.
+
+### Local quality gate
+
+```bash
+npm run ci:check              # before every commit/push
+CI_CLEAN=1 npm run ci:check    # clean .next/dist first
+npm run ci:docker             # optional: verify Docker builds locally
+```
+
+Requires Postgres + Redis (local brew services, or `docker compose up -d postgres redis`).
+
+### GitHub CI (mirrors local)
+
+On every push/PR to `main`, [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs:
+
+| Job | What |
+|-----|------|
+| **Build & test** | `scripts/ci-check.sh` — install, Prisma, full build, unit tests, Nest DI bootstrap, UsageService wiring lint |
+| **Docker build** | `scripts/ci-docker.sh` — production images for api, worker, web |
+
+### Commit → push → deploy
+
+```bash
+# 1. Implement one feature/fix
+npm run ci:check
+git add <files for this feature only>
+git commit -m "feat(scope): description"
+git push origin main
+
+# 2. Wait for GitHub Actions ✅
+
+# 3. On VPS
+cd /var/www/whatsapp-sender
+sudo bash scripts/vps/update-code.sh
+```
+
+**Never** run `npm run db:push` on the VPS host — migrations run inside Docker via `scripts/db-migrate.sh`.
+
+---
+
 ## Troubleshooting
 
 | Error | Fix |
@@ -205,7 +258,8 @@ See also [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for generic production checkli
 ## Tests
 
 ```bash
-npm run test              # unit
+npm run ci:check          # full gate — run before commit/push
+npm run test              # unit tests only
 CI=1 npm run test:e2e     # Playwright (auto-starts stack)
-npm run verify            # full pipeline
+npm run verify            # ci:check + e2e + smoke (when API up)
 ```
