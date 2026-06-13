@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { MessageStatus, SessionStatus } from '@whatsapp-sender/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsageService } from '../common/usage.service';
+import { SessionLiveService } from '../common/session-live.service';
 
 @Injectable()
 export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usage: UsageService,
+    private readonly sessionLive: SessionLiveService,
   ) {}
 
   async getStats(workspaceId: string) {
@@ -40,15 +42,18 @@ export class DashboardService {
         }),
       ]);
 
-    const connected = sessions.filter((s) => s.status === SessionStatus.CONNECTED);
+    const liveIds = await this.sessionLive.filterLive(sessions.map((s) => s.id));
+    const dbConnected = sessions.filter((s) => s.status === SessionStatus.CONNECTED);
+    const liveConnected = sessions.filter((s) => liveIds.has(s.id));
     const webhookSuccess = webhookDeliveries.filter((d) => d.success).length;
     const webhookFailed = webhookDeliveries.length - webhookSuccess;
 
     return {
       totalSessions: sessions.length,
-      connectedSessions: connected.length,
+      connectedSessions: dbConnected.length,
+      liveConnectedSessions: liveConnected.length,
       connectionHealthPercent:
-        sessions.length === 0 ? 0 : Math.round((connected.length / sessions.length) * 100),
+        sessions.length === 0 ? 0 : Math.round((liveConnected.length / sessions.length) * 100),
       activePackages: subscription?.active ? 1 : 0,
       messagesSent: usage.messagesSent,
       trialRemaining: usage.remaining,
@@ -73,16 +78,20 @@ export class DashboardService {
       })),
       funnel: {
         sessionCreated: sessions.length > 0,
-        sessionConnected: connected.length > 0,
+        sessionConnected: liveConnected.length > 0,
         firstMessageSent: Boolean(firstMessage),
-        connectedSession: connected[0]
-          ? { id: connected[0].id, name: connected[0].name, status: connected[0].status.toLowerCase() }
+        connectedSession: liveConnected[0]
+          ? {
+              id: liveConnected[0].id,
+              name: liveConnected[0].name,
+              status: liveConnected[0].status.toLowerCase(),
+            }
           : null,
       },
       recommendedAction:
         usage.remaining <= 0
           ? 'Activate a package to unlock more messages.'
-          : connected.length === 0
+          : liveConnected.length === 0
             ? 'Create a session and scan the QR code.'
             : 'Send your first message or start a bulk campaign.',
     };

@@ -15,9 +15,14 @@ describe('SessionsService', () => {
 
   const initQueue = { add: jest.fn() };
   const disconnectQueue = { add: jest.fn() };
+  const sessionLive = {
+    isLive: jest.fn().mockResolvedValue(false),
+    filterLive: jest.fn().mockResolvedValue(new Set<string>()),
+  };
 
   const service = new SessionsService(
     { client: prisma } as never,
+    sessionLive as never,
     initQueue as never,
     disconnectQueue as never,
   );
@@ -115,12 +120,16 @@ describe('SessionsService', () => {
 
     const result = await service.disconnect('ws-1', 's1');
     expect(result.status).toBe('disconnected');
-    expect(disconnectQueue.add).toHaveBeenCalledWith('disconnect', { sessionId: 's1' });
     expect(prisma.whatsappSession.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ apiKeyHash: null, apiKeyPrefix: null }),
+        data: expect.objectContaining({
+          disconnectRequestedAt: expect.any(Date),
+          apiKeyHash: null,
+          apiKeyPrefix: null,
+        }),
       }),
     );
+    expect(disconnectQueue.add).toHaveBeenCalledWith('disconnect', { sessionId: 's1' });
   });
 
   it('issueApiKey generates key when connected', async () => {

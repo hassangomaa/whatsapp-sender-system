@@ -4,11 +4,13 @@ import { Queue } from 'bullmq';
 import { generateApiKey, hashApiKey, QUEUES } from '@whatsapp-sender/contracts';
 import { SessionStatus } from '@whatsapp-sender/database';
 import { PrismaService } from '../prisma/prisma.service';
+import { SessionLiveService } from '../common/session-live.service';
 
 @Injectable()
 export class SessionsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly sessionLive: SessionLiveService,
     @InjectQueue(QUEUES.SESSION_INIT) private readonly initQueue: Queue,
     @InjectQueue(QUEUES.SESSION_DISCONNECT) private readonly disconnectQueue: Queue,
   ) {}
@@ -18,12 +20,14 @@ export class SessionsService {
       where: { workspaceId },
       orderBy: { createdAt: 'desc' },
     });
-    return sessions.map((s) => this.toPublicSession(s));
+    const liveIds = await this.sessionLive.filterLive(sessions.map((s) => s.id));
+    return sessions.map((s) => this.toPublicSession(s, liveIds.has(s.id)));
   }
 
   async get(workspaceId: string, id: string) {
     const session = await this.findSession(workspaceId, id);
-    return this.toPublicSession(session);
+    const liveConnected = await this.sessionLive.isLive(session.id);
+    return this.toPublicSession(session, liveConnected);
   }
 
   async create(workspaceId: string, name: string) {
@@ -34,7 +38,7 @@ export class SessionsService {
         status: SessionStatus.DISCONNECTED,
       },
     });
-    return this.toPublicSession(session);
+    return this.toPublicSession(session, false);
   }
 
   async init(workspaceId: string, id: string) {
@@ -44,7 +48,7 @@ export class SessionsService {
     }
     await this.prisma.client.whatsappSession.update({
       where: { id: session.id },
-      data: { status: SessionStatus.QR_PENDING, qrCode: null },
+      data: { status: SessionStatus.QR_PENDING, qrCode: null, disconnectRequestedAt: null },
     });
     await this.initQueue.add('init', { sessionId: id });
     return { status: 'qr_pending', message: 'QR generation started' };
@@ -52,10 +56,10 @@ export class SessionsService {
 
   async disconnect(workspaceId: string, id: string) {
     await this.findSession(workspaceId, id);
-    await this.disconnectQueue.add('disconnect', { sessionId: id });
     await this.prisma.client.whatsappSession.update({
       where: { id },
       data: {
+        disconnectRequestedAt: new Date(),
         status: SessionStatus.DISCONNECTED,
         qrCode: null,
         phone: null,
@@ -63,6 +67,7 @@ export class SessionsService {
         apiKeyPrefix: null,
       },
     });
+    await this.disconnectQueue.add('disconnect', { sessionId: id });
     return { status: 'disconnected' };
   }
 
@@ -119,27 +124,32 @@ export class SessionsService {
     return session;
   }
 
-  private toPublicSession(session: {
-    id: string;
-    name: string;
-    phone: string | null;
-    status: SessionStatus;
-    apiKeyPrefix: string | null;
-    scopeSend: boolean;
-    scopeMedia: boolean;
-    scopeWebhook: boolean;
-    webhookUrl: string | null;
-    qrCode: string | null;
-    lastConnectedAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }) {
+  private toPublicSession(
+    session: {
+      id: string;
+      name: string;
+      phone: string | null;
+      status: SessionStatus;
+      apiKeyPrefix: string | null;
+      scopeSend: boolean;
+      scopeMedia: boolean;
+      scopeWebhook: boolean;
+      webhookUrl: string | null;
+      qrCode: string | null;
+      lastConnectedAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    liveConnected: boolean,
+  ) {
     const hasApiKey = Boolean(session.apiKeyPrefix);
+    const dbConnected = session.status === SessionStatus.CONNECTED;
     return {
       id: session.id,
       name: session.name,
       phone: session.phone,
       status: session.status.toLowerCase(),
+      liveConnected,
       apiKeyPrefix: session.apiKeyPrefix,
       hasApiKey,
       scopes: {
@@ -152,7 +162,7 @@ export class SessionsService {
       lastConnectedAt: session.lastConnectedAt,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
-      canSendMessages: session.status === SessionStatus.CONNECTED && session.scopeSend,
+      canSendMessages: liveConnected && session.scopeSend,
     };
   }
 }

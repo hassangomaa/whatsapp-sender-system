@@ -18,7 +18,15 @@ describe('DashboardService', () => {
     }),
   };
 
-  const service = new DashboardService({ client: prisma } as never, usage as never);
+  const sessionLive = {
+    filterLive: jest.fn().mockResolvedValue(new Set(['s1'])),
+  };
+
+  const service = new DashboardService(
+    { client: prisma } as never,
+    usage as never,
+    sessionLive as never,
+  );
 
   beforeEach(() => jest.clearAllMocks());
 
