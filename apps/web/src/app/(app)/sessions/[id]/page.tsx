@@ -59,13 +59,15 @@ export default function SessionDetailPage() {
   const pairingRef = useRef(false);
   const connectingRef = useRef(false);
 
-  const applyStreamEvent = useCallback((data: StreamEvent) => {
+  const applyStreamEvent = useCallback((data: StreamEvent, onSync?: () => void) => {
     if (data.mock !== undefined) setBaileysMock(data.mock);
-    if (data.type === 'pairing_accepted' || data.status === 'connecting') {
+    if (data.type === 'reconnecting' || data.type === 'pairing_accepted' || data.status === 'connecting') {
       connectingRef.current = true;
       setConnecting(true);
-      setPairing(true);
-      pairingRef.current = true;
+      if (data.type === 'pairing_accepted') {
+        setPairing(true);
+        pairingRef.current = true;
+      }
     }
     if (data.qr && !connectingRef.current) {
       setQr(data.qr);
@@ -92,6 +94,7 @@ export default function SessionDetailPage() {
         setConnecting(false);
         setApiKey(null);
       }
+      onSync?.();
     }
   }, []);
 
@@ -129,43 +132,68 @@ export default function SessionDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    const token = getToken();
     let cancelled = false;
+    let reconnectAttempt = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    async function streamQr() {
-      const res = await fetch(`${API_URL}/api/v1/sessions/${id}/qr/stream`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const reader = res.body?.getReader();
-      if (!reader) return;
-      const decoder = new TextDecoder();
-      let buffer = '';
+    const scheduleReconnect = () => {
+      if (cancelled) return;
+      const delay = Math.min(2000 * 2 ** reconnectAttempt, 30_000);
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        connectStream().catch(console.error);
+      }, delay);
+    };
 
-      while (!cancelled) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const data = JSON.parse(line.slice(6)) as StreamEvent;
-            applyStreamEvent(data);
-            if (data.type === 'connected' || data.type === 'api_key_ready') load();
-            if (data.type === 'snapshot' && data.status) {
-              if (data.status === 'connecting') setConnecting(true);
-              if (data.status !== 'connected' && data.status !== 'connecting') {
-                setPairing(pairingRef.current);
-              }
-            }
-          } catch {}
+    async function connectStream() {
+      if (cancelled) return;
+      const token = getToken();
+      try {
+        const res = await fetch(`${API_URL}/api/v1/sessions/${id}/qr/stream`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const reader = res.body?.getReader();
+        if (!reader) {
+          scheduleReconnect();
+          return;
         }
+        reconnectAttempt = 0;
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (!cancelled) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const data = JSON.parse(line.slice(6)) as StreamEvent;
+              applyStreamEvent(data, () => { load().catch(() => {}); });
+              if (data.type === 'connected' || data.type === 'api_key_ready') load();
+              if (data.type === 'snapshot' && data.status) {
+                if (data.status === 'connecting') setConnecting(true);
+                if (data.status !== 'connected' && data.status !== 'connecting') {
+                  setPairing(pairingRef.current);
+                }
+              }
+            } catch {}
+          }
+        }
+
+        if (!cancelled) scheduleReconnect();
+      } catch {
+        if (!cancelled) scheduleReconnect();
       }
     }
 
-    streamQr().catch(console.error);
-    return () => { cancelled = true; };
+    connectStream().catch(console.error);
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
   }, [id, load, applyStreamEvent]);
 
   useEffect(() => {
@@ -175,6 +203,15 @@ export default function SessionDetailPage() {
     }, 5000);
     return () => clearInterval(poll);
   }, [pairing, session?.status, load]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (session.status !== 'connected' && session.status !== 'connecting') return;
+    const poll = setInterval(() => {
+      load().catch(() => {});
+    }, 30_000);
+    return () => clearInterval(poll);
+  }, [session?.status, load, session]);
 
   if (!session) return <LoadingState label="Loading session..." />;
 
@@ -186,9 +223,11 @@ export default function SessionDetailPage() {
   -H 'Idempotency-Key: unique-key-1' \\
   -d '{"phoneNumber":"201277785111","content":"Hello"}'`;
 
-  const statusLabel = connecting || session.status === 'connecting'
-    ? 'linking device'
-    : session.status.replace('_', ' ');
+  const statusLabel = connecting && session.status === 'connected'
+    ? 'reconnecting'
+    : connecting || session.status === 'connecting'
+      ? 'linking device'
+      : session.status.replace('_', ' ');
 
   const initDisabled = initLoading || connecting || session.status === 'connecting' ||
     (session.status === 'qr_pending' && pairing);
@@ -244,7 +283,7 @@ export default function SessionDetailPage() {
           <h2 className="font-semibold mb-2">Connection</h2>
           <span
             className={
-              session.status === 'connected'
+              session.status === 'connected' && !connecting
                 ? 'badge-green'
                 : connecting || session.status === 'connecting' || session.status === 'qr_pending' || pairing
                   ? 'badge-gray'

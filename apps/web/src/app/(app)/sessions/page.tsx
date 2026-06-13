@@ -13,6 +13,7 @@ type Session = {
   name: string;
   phone: string | null;
   status: string;
+  liveConnected?: boolean;
   apiKeyPrefix: string | null;
   hasApiKey: boolean;
   canSendMessages: boolean;
@@ -32,6 +33,10 @@ export default function SessionsPage() {
 
   useEffect(() => {
     load().catch(console.error);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') load().catch(console.error);
+    }, 30_000);
+    return () => clearInterval(interval);
   }, []);
 
   async function onCreate(e: FormEvent) {
@@ -98,14 +103,14 @@ export default function SessionsPage() {
               </div>
               <span
                 className={
-                  s.status === 'connected'
+                  s.liveConnected || s.status === 'connected'
                     ? 'badge-green shrink-0'
                     : s.status === 'qr_pending' || s.status === 'connecting'
                       ? 'badge-gray shrink-0'
                       : 'badge-red shrink-0'
                 }
               >
-                {s.status.replace('_', ' ')}
+                {s.liveConnected ? 'connected' : s.status.replace('_', ' ')}
               </span>
             </div>
             <p className="text-xs mt-4 text-[var(--muted)]">
