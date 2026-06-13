@@ -28,10 +28,24 @@ bash "$ROOT/scripts/db-migrate.sh"
 
 echo "==> Starting application services ..."
 docker compose $COMPOSE_FILES up -d api worker web
-sleep 5
 
-echo "==> Health checks ..."
-curl -sf "http://127.0.0.1:${API_HOST_PORT:-3020}/health" && echo ""
+echo "==> Waiting for API ..."
+LOCAL_API="http://127.0.0.1:${API_HOST_PORT:-3020}/health"
+for _ in $(seq 1 30); do
+  if curl -sf "$LOCAL_API" >/dev/null 2>&1; then
+    echo "✅ API healthy: $LOCAL_API"
+    break
+  fi
+  sleep 3
+done
+curl -sf "$LOCAL_API" || {
+  echo "❌ API not healthy — recent logs:"
+  docker compose $COMPOSE_FILES logs --tail=40 api
+  exit 1
+}
+echo ""
+
+echo "==> Public health ..."
 curl -sf "${NEXT_PUBLIC_API_URL}/health" && echo ""
 
 echo "==> Auth + CORS smoke ..."

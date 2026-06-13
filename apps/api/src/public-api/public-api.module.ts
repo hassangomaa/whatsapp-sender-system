@@ -4,7 +4,6 @@ import { QUEUES } from '@whatsapp-sender/contracts';
 import { PublicApiController } from './public-api.controller';
 import { PublicApiService } from './public-api.service';
 import { SessionsModule } from '../sessions/sessions.module';
-import { UsageService } from '../common/usage.service';
 import { WebhookService } from '../common/webhook.service';
 
 @Module({
@@ -16,6 +15,6 @@ import { WebhookService } from '../common/webhook.service';
     ),
   ],
   controllers: [PublicApiController],
-  providers: [PublicApiService, UsageService, WebhookService],
+  providers: [PublicApiService, WebhookService],
 })
 export class PublicApiModule {}

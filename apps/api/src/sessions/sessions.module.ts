@@ -4,7 +4,6 @@ import { QUEUES } from '@whatsapp-sender/contracts';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SessionsController } from './sessions.controller';
 import { SessionsService } from './sessions.service';
-import { UsageService } from '../common/usage.service';
 
 @Module({
   imports: [
@@ -15,7 +14,7 @@ import { UsageService } from '../common/usage.service';
     ),
   ],
   controllers: [SessionsController],
-  providers: [SessionsService, UsageService],
+  providers: [SessionsService],
   exports: [SessionsService],
 })
 export class SessionsModule {}
