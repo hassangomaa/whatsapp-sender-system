@@ -96,8 +96,8 @@ cmd_full() {
   wait_postgres
 
   echo "==> Starting application services..."
-  compose up -d api worker web
   run_migrate_seed
+  compose up -d api worker web
 
   wait_api "http://127.0.0.1:${LOCAL_API_PORT}/health"
 
@@ -135,10 +135,11 @@ cmd_code() {
   compose build
   compose up -d postgres redis
   wait_postgres
-  compose up -d api worker web
   run_migrate_seed
+  compose up -d api worker web
   wait_api "http://127.0.0.1:${LOCAL_API_PORT}/health"
   setup_nginx_ssl
+  bash "$ROOT/scripts/smoke-auth-production.sh" || echo "⚠️  Auth smoke failed — check CORS and API logs"
   echo "✅ Code deploy complete."
 }
 

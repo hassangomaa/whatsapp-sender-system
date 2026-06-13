@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3010';
+import { getApiUrl } from './config';
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -25,7 +25,7 @@ function parseApiError(body: unknown, status: number): string {
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${getApiUrl()}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',

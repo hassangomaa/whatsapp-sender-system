@@ -59,7 +59,13 @@ Flow: register → create session → init (mock connect) → public send → we
 
 **Tip:** Production mounts `baileys_sessions` volume (`docker-compose.prod.yml`) so auth survives container restarts. Tune persistence via `SESSION_HEALTH_*` and `SESSION_RECONNECT_MAX_DELAY_MS` in `.env`.
 
-After upgrading, apply schema changes: `npm run db:push` (adds `disconnect_requested_at` for safe user disconnect).
+After upgrading, apply schema changes **inside Docker** (do not run `npm run db:push` on the VPS host — Prisma is not installed there):
+
+```bash
+bash scripts/db-migrate.sh
+# or: sudo ./deploy-vps.sh migrate
+# or full update: sudo bash scripts/vps/update-code.sh
+```
 
 **Live connection health:** Worker writes Redis keys `session:{id}:live` (120s TTL). Dashboard and status APIs expose `liveConnected` / `liveConnectedSessions` based on actual Baileys sockets, not DB status alone.
 
@@ -91,6 +97,21 @@ npm run build -w @whatsapp-sender/api
 bash scripts/dev.sh
 ```
 
+### Login shows "Failed to fetch"
+
+**Cause:** Dashboard JavaScript calling wrong API URL (often `localhost:3010` baked into an old web build), API down, or CORS mismatch.
+
+**Fix:**
+
+```bash
+cd /var/www/whatsapp-sender
+sudo bash scripts/vps/update-code.sh
+# or: sudo ./deploy-vps.sh code
+npm run smoke:auth
+```
+
+Ensure `.env` has `CORS_ORIGIN=https://whatsapp.arheb.net` and `NEXT_PUBLIC_API_URL=https://api.whatsapp.arheb.net`. The web app also auto-derives `api.{hostname}` at runtime in production.
+
 ### QR stuck on pending
 
 - Local: set `BAILEYS_MOCK=1`, restart worker
@@ -111,21 +132,18 @@ bash scripts/dev.sh
 
 ## Database
 
+**Local dev:**
+
 ```bash
-# Migrate schema
 npm run db:push
-
-# Regenerate Prisma client
 npm run db:generate
-
-# Seed plans (idempotent)
 npm run seed -w @whatsapp-sender/database
 ```
 
-Docker:
+**Production (VPS) — always via Docker:**
 
 ```bash
-docker compose exec api sh -c "cd /app && npm run db:push -w @whatsapp-sender/database"
+bash scripts/db-migrate.sh
 ```
 
 ---

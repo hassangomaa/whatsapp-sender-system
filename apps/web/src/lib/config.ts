@@ -1,16 +1,29 @@
-/** Runtime API / app URLs — always reflects deployed or local env. */
+/** Runtime API / app URLs — works in local dev and production even if build-time env was wrong. */
 export function getApiUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, '');
+
   if (typeof window !== 'undefined') {
-    return process.env.NEXT_PUBLIC_API_URL ?? `${window.location.protocol}//${window.location.hostname}:3010`;
+    const { hostname, protocol } = window.location;
+
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+        return envUrl;
+      }
+      // whatsapp.arheb.net → api.whatsapp.arheb.net
+      return `${protocol}//api.${hostname}`;
+    }
+
+    return envUrl ?? `${protocol}//${hostname}:3010`;
   }
-  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3010';
+
+  return envUrl ?? 'http://localhost:3010';
 }
 
 export function getWebUrl(): string {
   if (typeof window !== 'undefined') {
     return window.location.origin;
   }
-  return process.env.NEXT_PUBLIC_WEB_URL ?? 'http://localhost:3011';
+  return process.env.NEXT_PUBLIC_WEB_URL?.replace(/\/$/, '') ?? 'http://localhost:3011';
 }
 
 export const API_ENDPOINTS = {

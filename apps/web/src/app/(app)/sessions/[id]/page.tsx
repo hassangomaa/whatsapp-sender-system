@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api, getToken } from '@/lib/api';
+import { getApiUrl } from '@/lib/config';
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/LoadingState';
 import { CopyButton } from '@/components/CopyButton';
@@ -12,7 +13,6 @@ import { QrConnectionPanel } from '@/components/QrConnectionPanel';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/Toast';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3010';
 const QR_REFRESH_SECONDS = 20;
 
 type Session = {
@@ -124,7 +124,7 @@ export default function SessionDetailPage() {
 
   useEffect(() => {
     load().catch((err) => toastError(err instanceof Error ? err.message : 'Failed to load'));
-    fetch(`${API_URL}/health`)
+    fetch(`${getApiUrl()}/health`)
       .then((r) => r.json())
       .then((h) => setBaileysMock(Boolean(h?.capabilities?.baileysMock)))
       .catch(() => {});
@@ -149,7 +149,7 @@ export default function SessionDetailPage() {
       if (cancelled) return;
       const token = getToken();
       try {
-        const res = await fetch(`${API_URL}/api/v1/sessions/${id}/qr/stream`, {
+        const res = await fetch(`${getApiUrl()}/api/v1/sessions/${id}/qr/stream`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const reader = res.body?.getReader();
@@ -215,7 +215,7 @@ export default function SessionDetailPage() {
 
   if (!session) return <LoadingState label="Loading session..." />;
 
-  const sendUrl = `${API_URL}/api/v1/whatsapp/public/message/send`;
+  const sendUrl = `${getApiUrl()}/api/v1/whatsapp/public/message/send`;
   const keyForCurl = apiKey ?? (session.hasApiKey ? `${session.apiKeyPrefix}…` : 'sk_live_<available_after_connect>');
   const curlExample = `curl -X POST '${sendUrl}' \\
   -H 'Content-Type: application/json' \\
