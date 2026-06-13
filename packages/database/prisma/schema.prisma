@@ -68,6 +68,7 @@ model Workspace {
   usage        UsageCounter?
   referralCode ReferralCode?
   settings     WorkspaceSettings?
+  platformSettings PlatformSettings?
 
   @@map("workspaces")
 }
@@ -279,4 +280,18 @@ model IdempotencyRecord {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("idempotency_records")
+}
+
+model PlatformSettings {
+  id                   String   @id @default("platform")
+  platformWorkspaceId  String?  @unique @map("platform_workspace_id")
+  otpSessionId         String?  @map("otp_session_id")
+  adminNotifySessionId String?  @map("admin_notify_session_id")
+  adminPhone           String?  @map("admin_phone")
+  adminNotifyEnabled   Boolean  @default(true) @map("admin_notify_enabled")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  platformWorkspace Workspace? @relation(fields: [platformWorkspaceId], references: [id], onDelete: SetNull)
+
+  @@map("platform_settings")
 }

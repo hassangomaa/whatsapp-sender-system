@@ -112,6 +112,16 @@ npm run smoke:auth
 
 Ensure `.env` has `CORS_ORIGIN=https://whatsapp.arheb.net` and `NEXT_PUBLIC_API_URL=https://api.whatsapp.arheb.net`. The web app also auto-derives `api.{hostname}` at runtime in production.
 
+### Configure OTP sender (platform admin)
+
+1. Set `PLATFORM_ADMIN_EMAILS=your@email.com` in `.env` (comma-separated allowlist).
+2. Login at `/login` with that email → open **Platform admin** at `/admin`.
+3. Create a session in the platform workspace → **Init / QR** → scan with WhatsApp.
+4. Select it as **OTP sender session** → Save.
+5. Optional: `bash scripts/smoke-admin-platform.sh` (requires admin login credentials).
+
+Env vars `OTP_SESSION_ID` / `ADMIN_NOTIFY_SESSION_ID` remain as fallback until configured in the dashboard.
+
 ### QR stuck on pending
 
 - Local: set `BAILEYS_MOCK=1`, restart worker

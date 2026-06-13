@@ -9,6 +9,7 @@ import {
   Package,
   BookOpen,
   Settings,
+  Shield,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -23,4 +24,5 @@ export const NAV_ICONS: Record<string, LucideIcon> = {
   packages: Package,
   docs: BookOpen,
   settings: Settings,
+  admin: Shield,
 };

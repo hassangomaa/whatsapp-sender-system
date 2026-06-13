@@ -2,13 +2,21 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
-import { ALL_NAV_ITEMS } from '@/lib/nav';
+import { useEffect, useState } from 'react';
+import { ALL_NAV_ITEMS, ADMIN_NAV_ITEM } from '@/lib/nav';
 import { NAV_ICONS } from '@/lib/nav-icons';
+import { authApi } from '@/lib/api';
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const pathname = usePathname();
+
+  useEffect(() => {
+    authApi.me().then((me) => setIsPlatformAdmin(Boolean(me.isPlatformAdmin))).catch(() => {});
+  }, []);
+
+  const items = isPlatformAdmin ? [...ALL_NAV_ITEMS, ADMIN_NAV_ITEM] : ALL_NAV_ITEMS;
 
   return (
     <div className="lg:hidden border-b border-[var(--border)] bg-[var(--card)]">
@@ -23,7 +31,7 @@ export function MobileNav() {
       </div>
       {open && (
         <nav className="px-3 pb-3 grid gap-0.5 max-h-[70vh] overflow-y-auto">
-          {ALL_NAV_ITEMS.map((link) => {
+          {items.map((link) => {
             const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
             const Icon = NAV_ICONS[link.iconKey];
             return (

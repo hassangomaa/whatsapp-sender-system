@@ -28,6 +28,15 @@ export const REDIS_CHANNELS = {
 /** Worker-written keys for live Baileys socket state (TTL refreshed while connected). */
 export const REDIS_KEYS = {
   sessionLive: (sessionId: string) => `session:${sessionId}:live`,
+  platformConfig: 'platform:config',
 } as const;
 
 export const SESSION_LIVE_TTL_SECONDS = 120;
+
+/** Cached platform OTP / admin-notify config (JSON). */
+export interface PlatformConfigCache {
+  otpSessionId: string | null;
+  adminNotifySessionId: string | null;
+  adminPhone: string | null;
+  adminNotifyEnabled: boolean;
+}

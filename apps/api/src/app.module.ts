@@ -14,6 +14,7 @@ import { SettingsModule } from './settings/settings.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { AdminNotifyModule } from './admin-notify/admin-notify.module';
+import { AdminPlatformModule } from './admin-platform/admin-platform.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -37,6 +38,7 @@ import { HealthController } from './health.controller';
     DashboardModule,
     WebhooksModule,
     SettingsModule,
+    AdminPlatformModule,
   ],
   controllers: [HealthController],
 })

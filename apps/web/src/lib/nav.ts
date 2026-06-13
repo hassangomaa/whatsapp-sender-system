@@ -10,6 +10,13 @@ export type NavSection = {
   items: NavItem[];
 };
 
+export const ADMIN_NAV_ITEM: NavItem = {
+  href: '/admin',
+  label: 'Platform admin',
+  iconKey: 'admin',
+  description: 'OTP sender & platform alerts',
+};
+
 export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Overview',

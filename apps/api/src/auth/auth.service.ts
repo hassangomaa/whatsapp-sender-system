@@ -2,6 +2,7 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { generateReferralCode } from '@whatsapp-sender/contracts';
+import { isPlatformAdminEmail } from '../admin-platform/platform-config.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto, RegisterDto } from './dto';
 
@@ -76,6 +77,7 @@ export class AuthService {
     return {
       user: { id: user.id, email: user.email, name: user.name, phone: user.phone },
       workspace: { id: workspace.id, name: workspace.name },
+      isPlatformAdmin: isPlatformAdminEmail(user.email),
     };
   }
 

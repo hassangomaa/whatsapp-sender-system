@@ -79,5 +79,57 @@ export const authApi = {
     api<{
       user: { name: string | null; email: string | null; phone: string | null };
       workspace: { id: string; name: string };
+      isPlatformAdmin?: boolean;
     }>('/api/v1/auth/me'),
+};
+
+export type PlatformSession = {
+  id: string;
+  name: string;
+  phone: string | null;
+  status: string;
+  liveConnected: boolean;
+};
+
+export type PlatformAdminView = {
+  platformWorkspaceId: string;
+  platformWorkspaceName: string;
+  otpSessionId: string | null;
+  adminNotifySessionId: string | null;
+  adminPhone: string | null;
+  adminNotifyEnabled: boolean;
+  otpSession: PlatformSession | null;
+  adminNotifySession: PlatformSession | null;
+  sessions: PlatformSession[];
+};
+
+export const adminApi = {
+  getPlatform: () => api<PlatformAdminView>('/api/v1/admin/platform'),
+  updatePlatform: (body: Partial<{
+    otpSessionId: string | null;
+    adminNotifySessionId: string | null;
+    adminPhone: string | null;
+    adminNotifyEnabled: boolean;
+  }>) =>
+    api<PlatformAdminView>('/api/v1/admin/platform', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  testOtp: (phone: string) =>
+    api<{ ok: boolean; expiresIn: number; devMode?: boolean }>('/api/v1/admin/platform/test-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    }),
+  createSession: (name: string) =>
+    api<PlatformSession>('/api/v1/admin/platform/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  initSession: (sessionId: string) =>
+    api<{ status: string; message: string }>(`/api/v1/admin/platform/sessions/${sessionId}/init`, {
+      method: 'POST',
+    }),
+  getSession: (sessionId: string) => api<PlatformSession & { qrCode: string | null }>(
+    `/api/v1/admin/platform/sessions/${sessionId}`,
+  ),
 };

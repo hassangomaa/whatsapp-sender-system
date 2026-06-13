@@ -25,6 +25,7 @@
     "smoke:public-api": "bash scripts/smoke-public-api.sh",
     "smoke:integration": "bash scripts/smoke-connected-session.sh",
     "smoke:auth": "bash scripts/smoke-auth-production.sh",
+    "smoke:admin": "bash scripts/smoke-admin-platform.sh",
     "smoke:otp": "bash scripts/smoke-otp-register.sh",
     "smoke:all": "bash scripts/smoke-all.sh",
     "verify": "bash scripts/verify.sh",
