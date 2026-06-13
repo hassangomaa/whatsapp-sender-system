@@ -52,11 +52,18 @@ Flow: register → create session → init (mock connect) → public send → we
 
 ## Session recovery
 
-1. Worker restart → `restoreConnectedSessions()` reloads Baileys from auth files
-2. Session disconnected → user clicks **Init / QR** on session detail
-3. Logged out from phone → scan QR again (`BAILEYS_MOCK=0` only)
+1. Worker restart → `restorePersistedSessions()` reloads all paired sessions from auth files on disk (including rows falsely marked `DISCONNECTED` when auth + phone remain).
+2. Transient network drop → Baileys auto-reconnects with exponential backoff; dashboard shows **reconnecting** then **connected**.
+3. Health loop (every 30s) triggers reconnect when auth files exist but the in-memory socket is missing — it no longer marks sessions disconnected just because the worker was briefly down.
+4. User-initiated disconnect or phone “Log out linked device” → scan QR again (`BAILEYS_MOCK=0` only).
 
-**Tip:** Mount `apps/worker/sessions/` persistently in Docker so auth survives container restarts.
+**Tip:** Production mounts `baileys_sessions` volume (`docker-compose.prod.yml`) so auth survives container restarts. Tune persistence via `SESSION_HEALTH_*` and `SESSION_RECONNECT_MAX_DELAY_MS` in `.env`.
+
+After upgrading, apply schema changes: `npm run db:push` (adds `disconnect_requested_at` for safe user disconnect).
+
+**Live connection health:** Worker writes Redis keys `session:{id}:live` (120s TTL). Dashboard and status APIs expose `liveConnected` / `liveConnectedSessions` based on actual Baileys sockets, not DB status alone.
+
+**Browser refresh / tab close:** Does not terminate WhatsApp — only the dashboard SSE stream. The session detail page auto-reconnects SSE and polls status every 30s while connected.
 
 ---
 

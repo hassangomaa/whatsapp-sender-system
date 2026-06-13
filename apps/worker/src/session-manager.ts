@@ -8,13 +8,14 @@ import * as path from 'path';
 import QRCode from 'qrcode';
 import { prisma, SessionStatus } from '@whatsapp-sender/database';
 import { WHATSAPP_QR_REFRESH_SECONDS } from '@whatsapp-sender/contracts';
-import { publishSessionEvent } from './redis';
+import { publishSessionEvent, refreshSessionLive, setSessionLive } from './redis';
 import { issueApiKeyIfNeeded } from './issue-api-key';
 import { enqueueAdminNotify } from './admin-notify-queue';
 import { BAILEYS_LOGGED_OUT, resolveCloseAction } from './session-close';
 
 const sessionsDir = path.join(process.cwd(), 'sessions');
 const MOCK_AUTO_CONNECT_MS = Number(process.env.BAILEYS_MOCK_CONNECT_MS ?? 3000);
+const RECONNECT_MAX_DELAY_MS = Number(process.env.SESSION_RECONNECT_MAX_DELAY_MS ?? 60_000);
 
 function qrExpiresAt() {
   return Date.now() + WHATSAPP_QR_REFRESH_SECONDS * 1000;
@@ -30,10 +31,43 @@ function logSession(sessionId: string, msg: string, extra?: Record<string, unkno
   console.log(`[session:${sessionId}] ${msg}${suffix}`);
 }
 
+type ReconnectReason = 'restore' | 'restart_pairing';
+
 export class SessionManager {
   private sockets = new Map<string, ReturnType<typeof makeWASocket>>();
   private mockTimers = new Map<string, { connect: NodeJS.Timeout; refresh: NodeJS.Timeout }>();
   private initInFlight = new Set<string>();
+  private reconnectAttempts = new Map<string, number>();
+  private reconnectTimers = new Map<string, NodeJS.Timeout>();
+
+  isConnected(sessionId: string): boolean {
+    const sock = this.sockets.get(sessionId);
+    return Boolean(sock?.user);
+  }
+
+  hasAuthFiles(sessionId: string): boolean {
+    return hasAuthFiles(sessionId);
+  }
+
+  isReconnectPending(sessionId: string): boolean {
+    return this.reconnectTimers.has(sessionId);
+  }
+
+  async refreshLiveStatus(sessionId: string) {
+    if (this.isConnected(sessionId)) {
+      await refreshSessionLive(sessionId).catch(() => {});
+    }
+  }
+
+  async clearLiveStatus(sessionId: string) {
+    await setSessionLive(sessionId, false).catch(() => {});
+  }
+
+  private ensureReconnect(sessionId: string) {
+    if (!hasAuthFiles(sessionId)) return;
+    if (this.reconnectTimers.has(sessionId) || this.initInFlight.has(sessionId)) return;
+    this.scheduleReconnect(sessionId, 'restore');
+  }
 
   async initSession(sessionId: string, opts: { restore?: boolean } = {}) {
     if (this.initInFlight.has(sessionId)) {
@@ -48,6 +82,12 @@ export class SessionManager {
 
       if (process.env.BAILEYS_MOCK === '1') {
         return this.initMockSession(sessionId);
+      }
+
+      const row = await prisma.whatsappSession.findUnique({ where: { id: sessionId } });
+      if (row?.disconnectRequestedAt) {
+        logSession(sessionId, 'init skipped — disconnect requested');
+        return;
       }
 
       const restoring = opts.restore || hasAuthFiles(sessionId);
@@ -66,6 +106,10 @@ export class SessionManager {
         auth: state,
         printQRInTerminal: false,
         qrTimeout: WHATSAPP_QR_REFRESH_SECONDS * 1000,
+        keepAliveIntervalMs: 25_000,
+        connectTimeoutMs: 60_000,
+        defaultQueryTimeoutMs: 60_000,
+        retryRequestDelayMs: 250,
       });
 
       this.sockets.set(sessionId, sock);
@@ -94,7 +138,10 @@ export class SessionManager {
           const phone = sock.user?.id?.split(':')[0] ?? null;
           if (!phone) return;
 
+          this.resetReconnectState(sessionId);
           logSession(sessionId, 'connected', { phone });
+
+          await setSessionLive(sessionId, true);
 
           await prisma.whatsappSession.update({
             where: { id: sessionId },
@@ -103,6 +150,7 @@ export class SessionManager {
               phone,
               qrCode: null,
               lastConnectedAt: new Date(),
+              disconnectRequestedAt: null,
             },
           });
 
@@ -148,16 +196,14 @@ export class SessionManager {
               status: 'connecting',
               message: 'Scan accepted — finishing connection…',
             });
-            setTimeout(() => {
-              this.initSession(sessionId, { restore: true }).catch((err) => {
-                console.error(`Failed to restart session ${sessionId}`, err);
-              });
-            }, 1000);
+            this.scheduleReconnect(sessionId, 'restart_pairing');
             return;
           }
 
           if (action.type === 'logout') {
+            this.resetReconnectState(sessionId);
             const loggedOut = code === BAILEYS_LOGGED_OUT;
+            await this.clearLiveStatus(sessionId);
             await this.clearAuthState(sessionId);
             await prisma.whatsappSession.update({
               where: { id: sessionId },
@@ -167,6 +213,7 @@ export class SessionManager {
                 phone: null,
                 apiKeyHash: null,
                 apiKeyPrefix: null,
+                disconnectRequestedAt: null,
               },
             });
             await publishSessionEvent(sessionId, {
@@ -179,14 +226,12 @@ export class SessionManager {
           }
 
           if (action.type === 'restore') {
-            setTimeout(() => {
-              this.initSession(sessionId, { restore: true }).catch((err) => {
-                console.error(`Failed to restore session ${sessionId}`, err);
-              });
-            }, 2000);
+            await this.clearLiveStatus(sessionId);
+            this.scheduleReconnect(sessionId, 'restore');
             return;
           }
 
+          await this.clearLiveStatus(sessionId);
           await prisma.whatsappSession.update({
             where: { id: sessionId },
             data: { status: SessionStatus.DISCONNECTED, qrCode: null },
@@ -199,11 +244,7 @@ export class SessionManager {
           });
 
           if (action.type === 'disconnected_retry' && !opts.restore) {
-            setTimeout(() => {
-              this.initSession(sessionId).catch((err) => {
-                console.error(`Failed to re-init session ${sessionId}`, err);
-              });
-            }, 2000);
+            this.scheduleReconnect(sessionId, 'restore');
           }
         }
       });
@@ -213,6 +254,7 @@ export class SessionManager {
   }
 
   async disconnectSession(sessionId: string) {
+    this.resetReconnectState(sessionId);
     this.clearMockTimer(sessionId);
     const sock = this.sockets.get(sessionId);
     if (sock) {
@@ -225,6 +267,7 @@ export class SessionManager {
       }
       this.sockets.delete(sessionId);
     }
+    await this.clearLiveStatus(sessionId);
     await this.clearAuthState(sessionId);
     await prisma.whatsappSession.update({
       where: { id: sessionId },
@@ -234,6 +277,7 @@ export class SessionManager {
         phone: null,
         apiKeyHash: null,
         apiKeyPrefix: null,
+        disconnectRequestedAt: null,
       },
     });
     await publishSessionEvent(sessionId, {
@@ -251,6 +295,7 @@ export class SessionManager {
 
     const sock = this.sockets.get(sessionId);
     if (!sock?.user) {
+      this.ensureReconnect(sessionId);
       throw new Error('Session not connected');
     }
     const jid = `${phoneNumber}@s.whatsapp.net`;
@@ -270,6 +315,7 @@ export class SessionManager {
 
     const sock = this.sockets.get(sessionId);
     if (!sock?.user) {
+      this.ensureReconnect(sessionId);
       throw new Error('Session not connected');
     }
     const jid = `${phoneNumber}@s.whatsapp.net`;
@@ -319,6 +365,7 @@ export class SessionManager {
         },
       });
       await issueApiKeyIfNeeded(sessionId);
+      await setSessionLive(sessionId, true);
       await publishSessionEvent(sessionId, {
         type: 'connected',
         sessionId,
@@ -332,39 +379,109 @@ export class SessionManager {
     this.mockTimers.set(sessionId, { connect: connectTimer, refresh: refreshInterval });
   }
 
-  async restoreConnectedSessions() {
-    const sessions = await prisma.whatsappSession.findMany({
-      where: { status: SessionStatus.CONNECTED },
+  async restorePersistedSessions() {
+    const byStatus = await prisma.whatsappSession.findMany({
+      where: {
+        disconnectRequestedAt: null,
+        status: { in: [SessionStatus.CONNECTED, SessionStatus.CONNECTING] },
+      },
     });
-    for (const session of sessions) {
+
+    const falselyDisconnected = await prisma.whatsappSession.findMany({
+      where: {
+        disconnectRequestedAt: null,
+        status: SessionStatus.DISCONNECTED,
+        phone: { not: null },
+      },
+    });
+
+    const toRestore = new Map<string, (typeof byStatus)[0]>();
+    for (const session of [...byStatus, ...falselyDisconnected]) {
+      if (hasAuthFiles(session.id)) {
+        toRestore.set(session.id, session);
+      }
+    }
+
+    if (fs.existsSync(sessionsDir)) {
+      for (const dirName of fs.readdirSync(sessionsDir)) {
+        if (!hasAuthFiles(dirName) || toRestore.has(dirName)) continue;
+        const row = await prisma.whatsappSession.findUnique({ where: { id: dirName } });
+        if (row?.phone && !row.disconnectRequestedAt) {
+          toRestore.set(dirName, row);
+        }
+      }
+    }
+
+    for (const session of toRestore.values()) {
+      logSession(session.id, 'restoring persisted session');
       await this.initSession(session.id, { restore: true }).catch((err) => {
         console.error(`Failed to restore session ${session.id}`, err);
       });
     }
   }
 
-  async pingSessions() {
-    for (const [sessionId, sock] of this.sockets) {
-      if (sock.user) {
-        await prisma.whatsappSession
-          .update({
-            where: { id: sessionId },
-            data: { lastConnectedAt: new Date() },
-          })
-          .catch(() => {});
-      }
-    }
+  /** @deprecated Use restorePersistedSessions */
+  async restoreConnectedSessions() {
+    return this.restorePersistedSessions();
   }
 
   async shutdown() {
+    for (const sessionId of this.reconnectTimers.keys()) {
+      this.clearReconnectTimer(sessionId);
+    }
     for (const sessionId of this.mockTimers.keys()) {
       this.clearMockTimer(sessionId);
     }
-    for (const [sessionId, sock] of this.sockets) {
+    for (const [, sock] of this.sockets) {
       try {
         sock.end(undefined);
       } catch {}
-      this.sockets.delete(sessionId);
+    }
+    this.sockets.clear();
+  }
+
+  private scheduleReconnect(sessionId: string, reason: ReconnectReason) {
+    if (this.reconnectTimers.has(sessionId) || this.initInFlight.has(sessionId)) {
+      return;
+    }
+
+    const attempts = this.reconnectAttempts.get(sessionId) ?? 0;
+    const baseDelay = reason === 'restart_pairing' ? 1000 : 2000;
+    const delay = Math.min(baseDelay * 2 ** attempts, RECONNECT_MAX_DELAY_MS);
+    this.reconnectAttempts.set(sessionId, attempts + 1);
+
+    logSession(sessionId, 'scheduling reconnect', { reason, delayMs: delay, attempt: attempts + 1 });
+
+    publishSessionEvent(sessionId, {
+      type: 'reconnecting',
+      sessionId,
+      status: 'connecting',
+      message: 'Reconnecting to WhatsApp…',
+    }).catch(console.error);
+
+    const timer = setTimeout(() => {
+      this.reconnectTimers.delete(sessionId);
+      this.initSession(sessionId, { restore: true }).catch((err) => {
+        console.error(`Failed to reconnect session ${sessionId}`, err);
+        if (hasAuthFiles(sessionId)) {
+          this.scheduleReconnect(sessionId, reason);
+        }
+      });
+    }, delay);
+
+    this.reconnectTimers.set(sessionId, timer);
+  }
+
+  private resetReconnectState(sessionId: string) {
+    this.reconnectAttempts.delete(sessionId);
+    this.clearReconnectTimer(sessionId);
+  }
+
+  private clearReconnectTimer(sessionId: string) {
+    const timer = this.reconnectTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.reconnectTimers.delete(sessionId);
     }
   }
 

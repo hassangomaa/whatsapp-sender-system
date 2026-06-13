@@ -11,9 +11,9 @@ async function main() {
 
   startWorkers();
   startNotifyWorkers();
-  const stopHealth = startHealthLoop();
 
-  await sessionManager.restoreConnectedSessions();
+  await sessionManager.restorePersistedSessions();
+  const stopHealth = startHealthLoop();
 
   const shutdown = async () => {
     console.log('Shutting down worker...');

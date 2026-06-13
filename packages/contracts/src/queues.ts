@@ -24,3 +24,10 @@ export const REDIS_CHANNELS = {
   sessionEvent: (sessionId: string) => `session:${sessionId}:events`,
   workspaceEvent: (workspaceId: string) => `workspace:${workspaceId}:events`,
 } as const;
+
+/** Worker-written keys for live Baileys socket state (TTL refreshed while connected). */
+export const REDIS_KEYS = {
+  sessionLive: (sessionId: string) => `session:${sessionId}:live`,
+} as const;
+
+export const SESSION_LIVE_TTL_SECONDS = 120;

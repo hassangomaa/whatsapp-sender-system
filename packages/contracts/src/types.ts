@@ -35,6 +35,7 @@ export interface SessionEvent {
     | 'pairing_accepted'
     | 'connected'
     | 'disconnected'
+    | 'reconnecting'
     | 'error'
     | 'snapshot'
     | 'api_key_ready';
@@ -82,6 +83,7 @@ export interface DashboardWebhookStats {
 export interface DashboardStats {
   totalSessions: number;
   connectedSessions: number;
+  liveConnectedSessions: number;
   connectionHealthPercent: number;
   activePackages: number;
   messagesSent: number;

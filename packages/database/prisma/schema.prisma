@@ -110,8 +110,9 @@ model WhatsappSession {
   webhookUrl      String?       @map("webhook_url")
   baileysAuthBlob Json?         @map("baileys_auth_blob")
   qrCode          String?       @map("qr_code")
-  lastConnectedAt DateTime?     @map("last_connected_at")
-  createdAt       DateTime      @default(now()) @map("created_at")
+  lastConnectedAt       DateTime? @map("last_connected_at")
+  disconnectRequestedAt DateTime? @map("disconnect_requested_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
