@@ -19,13 +19,16 @@ fi
 echo "==> Building (web gets NEXT_PUBLIC_* from .env) ..."
 docker compose $COMPOSE_FILES build api worker web
 
-echo "==> Starting services ..."
+echo "==> Starting infrastructure ..."
 docker compose $COMPOSE_FILES up -d postgres redis
 sleep 3
-docker compose $COMPOSE_FILES up -d api worker web
 
-echo "==> Database migrate (inside api container) ..."
+echo "==> Database migrate (before api start) ..."
 bash "$ROOT/scripts/db-migrate.sh"
+
+echo "==> Starting application services ..."
+docker compose $COMPOSE_FILES up -d api worker web
+sleep 5
 
 echo "==> Health checks ..."
 curl -sf "http://127.0.0.1:${API_HOST_PORT:-3020}/health" && echo ""
