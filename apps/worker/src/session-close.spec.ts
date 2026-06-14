@@ -15,9 +15,14 @@ describe('resolveCloseAction', () => {
     });
   });
 
-  it('returns logout for loggedOut and badSession', () => {
+  it('returns logout only for loggedOut (401)', () => {
     expect(resolveCloseAction(BAILEYS_LOGGED_OUT, true)).toEqual({ type: 'logout' });
-    expect(resolveCloseAction(BAILEYS_BAD_SESSION, true)).toEqual({ type: 'logout' });
+    expect(resolveCloseAction(BAILEYS_LOGGED_OUT, false)).toEqual({ type: 'logout' });
+  });
+
+  it('returns restore for badSession (500) when auth exists, else disconnected_retry', () => {
+    expect(resolveCloseAction(BAILEYS_BAD_SESSION, true)).toEqual({ type: 'restore' });
+    expect(resolveCloseAction(BAILEYS_BAD_SESSION, false)).toEqual({ type: 'disconnected_retry' });
   });
 
   it('returns restore when auth files exist on transient close', () => {

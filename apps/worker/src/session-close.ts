@@ -15,8 +15,11 @@ export function resolveCloseAction(code: number | undefined, hasAuth: boolean): 
   if (code === BAILEYS_RESTART_REQUIRED) {
     return { type: 'restart_pairing' };
   }
-  if (code === BAILEYS_LOGGED_OUT || code === BAILEYS_BAD_SESSION) {
+  if (code === BAILEYS_LOGGED_OUT) {
     return { type: 'logout' };
+  }
+  if (code === BAILEYS_BAD_SESSION) {
+    return hasAuth ? { type: 'restore' } : { type: 'disconnected_retry' };
   }
   if (hasAuth) {
     return { type: 'restore' };

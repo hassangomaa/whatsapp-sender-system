@@ -139,6 +139,35 @@ Env vars `OTP_SESSION_ID` / `ADMIN_NOTIFY_SESSION_ID` remain as fallback until c
 - Local: set `BAILEYS_MOCK=1`, restart worker
 - Production: check worker logs, ensure outbound WhatsApp Web access
 
+### All sessions disconnected / empty `baileys_sessions` volume
+
+**Cause:** Two dashboard sessions were paired to the **same WhatsApp phone** at once. WhatsApp returns stream error (code **500**). Older worker builds treated 500 like logout and wiped auth.
+
+**Fix:**
+
+1. On the phone: WhatsApp → **Linked devices** → remove all "WhatsApp Sender" entries.
+2. In the dashboard: keep **one** session (e.g. OTP Sender). Delete or never re-pair duplicate sessions (`test`, `demo`, etc.).
+3. Deploy latest worker (500 → reconnect, duplicate-phone guard):
+
+```bash
+cd /var/www/whatsapp-sender
+git pull origin main
+sudo bash scripts/vps/update-code.sh
+```
+
+4. Scan QR on **one** session only, then verify:
+
+```bash
+sudo bash scripts/vps/recover-whatsapp-sessions.sh
+```
+
+Auth folder should contain `{sessionId}/creds.json`. Rule: **one phone = one linked session** in this system.
+
+### Duplicate phone rejected
+
+If a second session scans the same number, the worker disconnects the new socket and shows:
+`This phone is already linked to session "…"`. Use separate phones for multiple sessions, or delete the existing linked session first.
+
 ### Public API 403 quota exceeded
 
 - Check `/packages` for plan limits

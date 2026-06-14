@@ -9,12 +9,13 @@
     "test": "jest"
   },
   "dependencies": {
+    "@hapi/boom": "^10.0.1",
     "@whatsapp-sender/contracts": "*",
     "@whatsapp-sender/database": "*",
-    "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.16",
     "bullmq": "^5.34.10",
     "ioredis": "^5.4.2",
+    "link-preview-js": "^3.2.0",
     "pino": "^9.6.0",
     "qrcode": "^1.5.4"
   },

@@ -11,7 +11,7 @@ import { WHATSAPP_QR_REFRESH_SECONDS, buildMessageJid } from '@whatsapp-sender/c
 import { publishSessionEvent, refreshSessionLive, setSessionLive } from './redis';
 import { issueApiKeyIfNeeded } from './issue-api-key';
 import { enqueueAdminNotify } from './admin-notify-queue';
-import { BAILEYS_LOGGED_OUT, resolveCloseAction } from './session-close';
+import { resolveCloseAction } from './session-close';
 
 const sessionsDir = path.join(process.cwd(), 'sessions');
 const MOCK_AUTO_CONNECT_MS = Number(process.env.BAILEYS_MOCK_CONNECT_MS ?? 3000);
@@ -51,6 +51,70 @@ export class SessionManager {
 
   isReconnectPending(sessionId: string): boolean {
     return this.reconnectTimers.has(sessionId);
+  }
+
+  private findLiveSessionByPhone(
+    sessionId: string,
+    phone: string,
+  ): { id: string; name: string } | null {
+    for (const [otherId, otherSock] of this.sockets) {
+      if (otherId === sessionId) continue;
+      const otherPhone = otherSock.user?.id?.split(':')[0];
+      if (otherPhone === phone) {
+        return { id: otherId, name: otherId };
+      }
+    }
+    return null;
+  }
+
+  private async rejectDuplicatePhone(sessionId: string, phone: string): Promise<boolean> {
+    const duplicateRow = await prisma.whatsappSession.findFirst({
+      where: {
+        phone,
+        id: { not: sessionId },
+        status: { in: [SessionStatus.CONNECTED, SessionStatus.CONNECTING] },
+      },
+      select: { id: true, name: true },
+    });
+
+    const liveDuplicate = this.findLiveSessionByPhone(sessionId, phone);
+    let duplicate = duplicateRow;
+    if (liveDuplicate && (!duplicate || duplicate.id === liveDuplicate.id)) {
+      const row = await prisma.whatsappSession.findUnique({
+        where: { id: liveDuplicate.id },
+        select: { id: true, name: true },
+      });
+      duplicate = row ?? { id: liveDuplicate.id, name: liveDuplicate.id };
+    }
+
+    if (!duplicate) return false;
+
+    logSession(sessionId, 'duplicate phone rejected', {
+      phone,
+      existingSessionId: duplicate.id,
+      existingSessionName: duplicate.name,
+    });
+
+    await this.endSocket(sessionId);
+    await this.clearLiveStatus(sessionId);
+    await this.clearAuthState(sessionId);
+    await prisma.whatsappSession.update({
+      where: { id: sessionId },
+      data: {
+        status: SessionStatus.DISCONNECTED,
+        phone: null,
+        qrCode: null,
+        apiKeyHash: null,
+        apiKeyPrefix: null,
+      },
+    });
+    await publishSessionEvent(sessionId, {
+      type: 'error',
+      sessionId,
+      status: 'disconnected',
+      message: `This phone is already linked to session "${duplicate.name}". Use one session per WhatsApp number.`,
+    });
+    return true;
   }
 
   async refreshLiveStatus(sessionId: string) {
@@ -138,6 +202,10 @@ export class SessionManager {
           const phone = sock.user?.id?.split(':')[0] ?? null;
           if (!phone) return;
 
+          if (await this.rejectDuplicatePhone(sessionId, phone)) {
+            return;
+          }
+
           this.resetReconnectState(sessionId);
           logSession(sessionId, 'connected', { phone });
 
@@ -188,10 +256,12 @@ export class SessionManager {
         }
 
         if (connection === 'close') {
-          const code = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
+          const disconnectError = lastDisconnect?.error as Boom | undefined;
+          const code = disconnectError?.output?.statusCode;
+          const reason = disconnectError?.message;
           const action = resolveCloseAction(code, hasAuthFiles(sessionId));
 
-          logSession(sessionId, 'connection closed', { code, action: action.type });
+          logSession(sessionId, 'connection closed', { code, reason, action: action.type });
 
           await this.endSocket(sessionId);
 
@@ -212,7 +282,6 @@ export class SessionManager {
 
           if (action.type === 'logout') {
             this.resetReconnectState(sessionId);
-            const loggedOut = code === BAILEYS_LOGGED_OUT;
             await this.clearLiveStatus(sessionId);
             await this.clearAuthState(sessionId);
             await prisma.whatsappSession.update({
@@ -230,7 +299,7 @@ export class SessionManager {
               type: 'disconnected',
               sessionId,
               status: 'disconnected',
-              message: loggedOut ? 'Logged out from WhatsApp' : 'Session invalid — scan QR again',
+              message: 'Logged out from WhatsApp',
             });
             return;
           }
