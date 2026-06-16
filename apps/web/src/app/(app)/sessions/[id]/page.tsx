@@ -12,6 +12,11 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { QrConnectionPanel } from '@/components/QrConnectionPanel';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/Toast';
+import {
+  clearStoredSessionApiKey,
+  getStoredSessionApiKey,
+  setStoredSessionApiKey,
+} from '@/lib/session-api-keys';
 
 const QR_REFRESH_SECONDS = 20;
 
@@ -22,6 +27,7 @@ type Session = {
   status: string;
   apiKeyPrefix: string | null;
   hasApiKey: boolean;
+  apiKey?: string;
   qrCode: string | null;
   scopes: { send: boolean; media: boolean; webhook: boolean };
   webhookUrl: string | null;
@@ -85,6 +91,7 @@ export default function SessionDetailPage() {
     }
     if (data.type === 'api_key_ready' && data.apiKey) {
       setApiKey(data.apiKey);
+      setStoredSessionApiKey(id, data.apiKey);
     }
     if (data.type === 'disconnected' || data.status === 'disconnected') {
       if (data.type === 'disconnected') {
@@ -93,15 +100,23 @@ export default function SessionDetailPage() {
         connectingRef.current = false;
         setConnecting(false);
         setApiKey(null);
+        clearStoredSessionApiKey(id);
       }
       onSync?.();
     }
-  }, []);
+  }, [id]);
 
   const load = useCallback(() => api<Session>(`/api/v1/sessions/${id}`).then((s) => {
     setSession(s);
     setScopes(s.scopes);
     setWebhookUrl(s.webhookUrl ?? '');
+    if (s.apiKey) {
+      setApiKey(s.apiKey);
+      setStoredSessionApiKey(id, s.apiKey);
+    } else {
+      const cached = getStoredSessionApiKey(id);
+      if (cached) setApiKey(cached);
+    }
     if (s.status === 'connecting') {
       connectingRef.current = true;
       setConnecting(true);
@@ -121,6 +136,11 @@ export default function SessionDetailPage() {
       pairingRef.current = false;
     }
   }), [id]);
+
+  useEffect(() => {
+    const cached = getStoredSessionApiKey(id);
+    if (cached) setApiKey(cached);
+  }, [id]);
 
   useEffect(() => {
     load().catch((err) => toastError(err instanceof Error ? err.message : 'Failed to load'));
@@ -218,7 +238,7 @@ export default function SessionDetailPage() {
   const sendUrl = `${getApiUrl()}${API_ENDPOINTS.send}`;
   const groupSendUrl = `${getApiUrl()}${API_ENDPOINTS.groupsMessageSend}`;
   const channelSendUrl = `${getApiUrl()}${API_ENDPOINTS.channelsMessageSend}`;
-  const keyForCurl = apiKey ?? (session.hasApiKey ? `${session.apiKeyPrefix}…` : 'sk_live_<available_after_connect>');
+  const keyForCurl = apiKey ?? 'sk_live_<available_after_connect>';
   const curlExample = `curl -X POST '${sendUrl}' \\
   -H 'Content-Type: application/json' \\
   -H 'x-api-key: ${keyForCurl}' \\
@@ -250,9 +270,11 @@ export default function SessionDetailPage() {
         description={
           session.phone
             ? `+${session.phone}`
-            : session.hasApiKey
-              ? `Not linked yet · ${session.apiKeyPrefix}…`
-              : 'Not linked yet · API key after pairing'
+            : apiKey
+              ? 'Not linked yet · API key ready'
+              : session.hasApiKey
+                ? 'Not linked yet · re-pair to view API key'
+                : 'Not linked yet · API key after pairing'
         }
         actions={
           <>
@@ -328,21 +350,17 @@ export default function SessionDetailPage() {
         </div>
       </div>
 
-      {(session.status === 'connected' && (apiKey || session.hasApiKey)) && (
+      {(apiKey || session.hasApiKey) && (
         <div className="card p-5 border-brand/50 bg-brand/5">
           <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
             <h2 className="font-semibold">API key</h2>
             {apiKey && <CopyButton text={apiKey} label="Copy API key" />}
           </div>
           {apiKey ? (
-            <>
-              <p className="text-sm text-[var(--muted)] mb-3">Save this key — shown once after pairing.</p>
-              <code className="block break-all text-sm bg-black/5 dark:bg-white/5 p-3 rounded-xl">{apiKey}</code>
-            </>
+            <code className="block break-all text-sm bg-black/5 dark:bg-white/5 p-3 rounded-xl">{apiKey}</code>
           ) : (
             <p className="text-sm text-[var(--muted)]">
-              Key prefix <code className="font-mono">{session.apiKeyPrefix}</code> — full key was shown when you
-              first connected. Disconnect and re-pair to generate a new key.
+              Full key unavailable for this session. Disconnect and re-pair once to store it for future access.
             </p>
           )}
         </div>
@@ -407,6 +425,7 @@ export default function SessionDetailPage() {
             setPairing(false);
             setConnecting(false);
             setApiKey(null);
+            clearStoredSessionApiKey(id);
             pairingRef.current = false;
             success('Session disconnected — scan a new QR to reconnect');
             await load();

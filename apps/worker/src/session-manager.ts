@@ -106,6 +106,7 @@ export class SessionManager {
         qrCode: null,
         apiKeyHash: null,
         apiKeyPrefix: null,
+        apiKeyEncrypted: null,
       },
     });
     await publishSessionEvent(sessionId, {
@@ -292,6 +293,7 @@ export class SessionManager {
                 phone: null,
                 apiKeyHash: null,
                 apiKeyPrefix: null,
+                apiKeyEncrypted: null,
                 disconnectRequestedAt: null,
               },
             });
@@ -356,6 +358,7 @@ export class SessionManager {
         phone: null,
         apiKeyHash: null,
         apiKeyPrefix: null,
+        apiKeyEncrypted: null,
         disconnectRequestedAt: null,
       },
     });

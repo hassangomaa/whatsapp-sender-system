@@ -104,6 +104,7 @@ model WhatsappSession {
   phone           String?
   apiKeyHash      String?       @unique @map("api_key_hash")
   apiKeyPrefix    String?       @map("api_key_prefix")
+  apiKeyEncrypted String?       @map("api_key_encrypted")
   status          SessionStatus @default(DISCONNECTED)
   scopeSend       Boolean       @default(true) @map("scope_send")
   scopeMedia      Boolean       @default(true) @map("scope_media")

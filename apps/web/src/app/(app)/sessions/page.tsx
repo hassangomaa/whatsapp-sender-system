@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { resolveSessionApiKey, setStoredSessionApiKey } from '@/lib/session-api-keys';
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/LoadingState';
 import { Button } from '@/components/ui/Button';
@@ -16,6 +17,7 @@ type Session = {
   liveConnected?: boolean;
   apiKeyPrefix: string | null;
   hasApiKey: boolean;
+  apiKey?: string;
   canSendMessages: boolean;
 };
 
@@ -28,7 +30,12 @@ export default function SessionsPage() {
 
   const load = () =>
     api<Session[]>('/api/v1/sessions')
-      .then(setSessions)
+      .then((rows) => {
+        rows.forEach((s) => {
+          if (s.apiKey) setStoredSessionApiKey(s.id, s.apiKey);
+        });
+        setSessions(rows);
+      })
       .finally(() => setLoading(false));
 
   useEffect(() => {
@@ -97,8 +104,9 @@ export default function SessionsPage() {
               <div className="min-w-0">
                 <h2 className="font-semibold text-lg truncate">{s.name}</h2>
                 <p className="text-sm text-[var(--muted)] mt-1">{s.phone ?? 'No phone linked'}</p>
-                <p className="text-xs text-[var(--muted)] mt-1 font-mono">
-                  {s.hasApiKey && s.apiKeyPrefix ? `${s.apiKeyPrefix}…` : 'API key after pairing'}
+                <p className="text-xs text-[var(--muted)] mt-1 font-mono break-all">
+                  {resolveSessionApiKey(s.id, s.apiKey) ??
+                    (s.hasApiKey ? 'Re-pair to view API key' : 'API key after pairing')}
                 </p>
               </div>
               <span

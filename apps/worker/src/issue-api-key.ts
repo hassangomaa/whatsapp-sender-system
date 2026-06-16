@@ -1,4 +1,4 @@
-import { generateApiKey } from '@whatsapp-sender/contracts';
+import { generateApiKey, encryptApiKey } from '@whatsapp-sender/contracts';
 import { prisma } from '@whatsapp-sender/database';
 import { publishSessionEvent } from './redis';
 
@@ -11,7 +11,11 @@ export async function issueApiKeyIfNeeded(sessionId: string): Promise<string | n
   const { key, prefix, hash } = generateApiKey();
   await prisma.whatsappSession.update({
     where: { id: sessionId },
-    data: { apiKeyHash: hash, apiKeyPrefix: prefix },
+    data: {
+      apiKeyHash: hash,
+      apiKeyPrefix: prefix,
+      apiKeyEncrypted: encryptApiKey(key),
+    },
   });
 
   await publishSessionEvent(sessionId, {

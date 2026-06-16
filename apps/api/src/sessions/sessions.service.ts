@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { generateApiKey, hashApiKey, QUEUES } from '@whatsapp-sender/contracts';
+import { generateApiKey, hashApiKey, encryptApiKey, decryptApiKey, QUEUES } from '@whatsapp-sender/contracts';
 import { SessionStatus } from '@whatsapp-sender/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionLiveService } from '../common/session-live.service';
@@ -65,6 +65,7 @@ export class SessionsService {
         phone: null,
         apiKeyHash: null,
         apiKeyPrefix: null,
+        apiKeyEncrypted: null,
       },
     });
     await this.disconnectQueue.add('disconnect', { sessionId: id });
@@ -109,7 +110,11 @@ export class SessionsService {
     const { key, prefix, hash } = generateApiKey();
     await this.prisma.client.whatsappSession.update({
       where: { id: sessionId },
-      data: { apiKeyHash: hash, apiKeyPrefix: prefix },
+      data: {
+        apiKeyHash: hash,
+        apiKeyPrefix: prefix,
+        apiKeyEncrypted: encryptApiKey(key),
+      },
     });
     return key;
   }
@@ -131,6 +136,7 @@ export class SessionsService {
       phone: string | null;
       status: SessionStatus;
       apiKeyPrefix: string | null;
+      apiKeyEncrypted: string | null;
       scopeSend: boolean;
       scopeMedia: boolean;
       scopeWebhook: boolean;
@@ -143,7 +149,7 @@ export class SessionsService {
     liveConnected: boolean,
   ) {
     const hasApiKey = Boolean(session.apiKeyPrefix);
-    const dbConnected = session.status === SessionStatus.CONNECTED;
+    const apiKey = session.apiKeyEncrypted ? decryptApiKey(session.apiKeyEncrypted) : null;
     return {
       id: session.id,
       name: session.name,
@@ -152,6 +158,7 @@ export class SessionsService {
       liveConnected,
       apiKeyPrefix: session.apiKeyPrefix,
       hasApiKey,
+      ...(apiKey ? { apiKey } : {}),
       scopes: {
         send: session.scopeSend,
         media: session.scopeMedia,

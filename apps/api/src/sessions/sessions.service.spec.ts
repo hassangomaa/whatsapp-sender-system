@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { SessionStatus } from '@whatsapp-sender/database';
+import { encryptApiKey } from '@whatsapp-sender/contracts';
 import { SessionsService } from './sessions.service';
 
 describe('SessionsService', () => {
@@ -37,6 +38,7 @@ describe('SessionsService', () => {
         phone: null,
         status: SessionStatus.DISCONNECTED,
         apiKeyPrefix: null,
+        apiKeyEncrypted: null,
         scopeSend: true,
         scopeMedia: false,
         scopeWebhook: false,
@@ -62,6 +64,7 @@ describe('SessionsService', () => {
       phone: null,
       status: SessionStatus.DISCONNECTED,
       apiKeyPrefix: null,
+      apiKeyEncrypted: null,
       scopeSend: true,
       scopeMedia: true,
       scopeWebhook: true,
@@ -126,6 +129,7 @@ describe('SessionsService', () => {
           disconnectRequestedAt: expect.any(Date),
           apiKeyHash: null,
           apiKeyPrefix: null,
+          apiKeyEncrypted: null,
         }),
       }),
     );
@@ -142,6 +146,36 @@ describe('SessionsService', () => {
 
     const key = await service.issueApiKey('s1');
     expect(key).toMatch(/^sk_live_/);
-    expect(prisma.whatsappSession.update).toHaveBeenCalled();
+    expect(prisma.whatsappSession.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          apiKeyEncrypted: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it('returns decrypted apiKey when encrypted value is stored', async () => {
+    const plainKey = 'sk_live_testkey1234567890abcdef';
+    process.env.API_KEY_ENCRYPTION_SECRET = 'test-encryption-secret-min-32-chars';
+    prisma.whatsappSession.findFirst.mockResolvedValue({
+      id: 's1',
+      name: 'POS',
+      phone: '201234567890',
+      status: SessionStatus.CONNECTED,
+      apiKeyPrefix: plainKey.slice(0, 16),
+      apiKeyEncrypted: encryptApiKey(plainKey),
+      scopeSend: true,
+      scopeMedia: true,
+      scopeWebhook: false,
+      webhookUrl: null,
+      qrCode: null,
+      lastConnectedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const row = await service.get('ws-1', 's1');
+    expect(row.apiKey).toBe(plainKey);
   });
 });
