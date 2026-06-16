@@ -4,6 +4,7 @@ import {
   Get,
   Headers,
   HttpCode,
+  Param,
   Post,
   UploadedFile,
   UseInterceptors,
@@ -36,6 +37,11 @@ export class PublicApiController {
       phoneNumber: dto.phoneNumber,
       content: dto.content,
     });
+  }
+
+  @Get('message/:messageId')
+  getMessage(@Headers('x-api-key') apiKey: string, @Param('messageId') messageId: string) {
+    return this.publicApi.getMessage(apiKey, messageId);
   }
 
   @Post('media/send')

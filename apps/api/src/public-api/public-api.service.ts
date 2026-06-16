@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -57,6 +58,37 @@ export class PublicApiService {
     }
 
     return this.enqueueMessage(session, resolved, payload.content, idempotencyKey);
+  }
+
+  async getMessage(apiKey: string, messageId: string) {
+    const session = await this.resolveSession(apiKey, 'send');
+    const message = await this.prisma.client.message.findFirst({
+      where: { id: messageId, sessionId: session.id },
+      select: {
+        id: true,
+        phoneNumber: true,
+        status: true,
+        errorMessage: true,
+        externalId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    return {
+      id: message.id,
+      messageId: message.id,
+      phoneNumber: message.phoneNumber,
+      status: message.status,
+      errorMessage: message.errorMessage,
+      externalId: message.externalId,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+    };
   }
 
   async sendGroupMessage(
