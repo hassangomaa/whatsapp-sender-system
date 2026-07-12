@@ -211,6 +211,7 @@ export function startWorkers() {
               mediaUrl: data.mediaUrl,
               mediaBase64: data.mediaBase64,
               caption: data.caption,
+              fileName: data.fileName,
             },
           );
           await markMessageSent(data.messageId, result.id);

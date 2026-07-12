@@ -87,6 +87,10 @@ export class SendGroupMediaDto {
   @IsOptional()
   @IsString()
   caption?: string;
+
+  @IsOptional()
+  @IsString()
+  fileName?: string;
 }
 
 export class SendChannelMediaDto {

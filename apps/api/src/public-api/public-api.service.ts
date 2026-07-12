@@ -304,6 +304,7 @@ export class PublicApiService {
       mediaType: string;
       mediaUrl?: string;
       caption?: string;
+      fileName?: string;
       file?: Express.Multer.File;
     },
   ) {
@@ -437,6 +438,7 @@ export class PublicApiService {
       mediaType: string;
       mediaUrl?: string;
       caption?: string;
+      fileName?: string;
       file?: Express.Multer.File;
     },
     idempotencyKey: string | undefined,
@@ -449,6 +451,8 @@ export class PublicApiService {
         return existing.response as { id: string; messageId?: string };
       }
     }
+
+    const fileName = payload.fileName ?? payload.file?.originalname;
 
     const message = await this.prisma.client.message.create({
       data: {
@@ -473,6 +477,7 @@ export class PublicApiService {
         mediaUrl: payload.mediaUrl,
         mediaBase64: payload.file ? payload.file.buffer.toString('base64') : undefined,
         caption: payload.caption,
+        fileName,
         recipientKind: resolved.kind as RecipientKind,
       },
       { jobId: message.id },

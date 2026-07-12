@@ -551,7 +551,12 @@ export class SessionManager {
     sessionId: string,
     recipient: string,
     mediaType: string,
-    opts: { mediaUrl?: string; mediaBase64?: string; caption?: string },
+    opts: {
+      mediaUrl?: string;
+      mediaBase64?: string;
+      caption?: string;
+      fileName?: string;
+    },
   ) {
     if (process.env.BAILEYS_MOCK === '1') {
       return { id: `mock-media-${Date.now()}` };
@@ -562,15 +567,67 @@ export class SessionManager {
       this.ensureReconnect(sessionId);
       throw new Error('Session not connected');
     }
+
     const jid = buildMessageJid(recipient);
-    if (mediaType === 'image' && opts.mediaUrl) {
-      const result = await sock.sendMessage(jid, {
-        image: { url: opts.mediaUrl },
-        caption: opts.caption,
-      });
-      return { id: result?.key?.id ?? `media-${Date.now()}` };
+    const payload = this.buildMediaMessagePayload(mediaType, opts);
+    const result = await sock.sendMessage(jid, payload as any);
+
+    return { id: result?.key?.id ?? `media-${Date.now()}` };
+  }
+
+  private buildMediaMessagePayload(
+    mediaType: string,
+    opts: {
+      mediaUrl?: string;
+      mediaBase64?: string;
+      caption?: string;
+      fileName?: string;
+    },
+  ): Record<string, unknown> {
+    const source = this.resolveMediaSource(opts);
+    const caption = opts.caption;
+
+    switch (mediaType) {
+      case 'image':
+        return { image: source, caption };
+      case 'video':
+        return { video: source, caption };
+      case 'audio':
+        return { audio: source, mimetype: 'audio/mpeg' };
+      case 'document':
+        return {
+          document: source,
+          mimetype: this.guessDocumentMime(opts.fileName),
+          fileName: opts.fileName ?? 'document.bin',
+          caption,
+        };
+      default:
+        throw new Error(`Unsupported media type: ${mediaType}`);
     }
-    throw new Error(`Unsupported media type: ${mediaType}`);
+  }
+
+  private resolveMediaSource(opts: {
+    mediaUrl?: string;
+    mediaBase64?: string;
+  }): Buffer | { url: string } {
+    if (opts.mediaBase64) {
+      return Buffer.from(opts.mediaBase64, 'base64');
+    }
+    if (opts.mediaUrl) {
+      return { url: opts.mediaUrl };
+    }
+    throw new Error('mediaUrl or mediaBase64 required');
+  }
+
+  private guessDocumentMime(fileName?: string): string {
+    const lower = (fileName ?? '').toLowerCase();
+    if (lower.endsWith('.apk')) {
+      return 'application/vnd.android.package-archive';
+    }
+    if (lower.endsWith('.pdf')) {
+      return 'application/pdf';
+    }
+    return 'application/octet-stream';
   }
 
   private async initMockSession(sessionId: string) {

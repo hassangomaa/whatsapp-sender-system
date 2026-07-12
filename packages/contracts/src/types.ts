@@ -15,6 +15,7 @@ export interface SendMediaJob {
   mediaUrl?: string;
   mediaBase64?: string;
   caption?: string;
+  fileName?: string;
   recipientKind?: 'phone' | 'group' | 'newsletter';
 }
 

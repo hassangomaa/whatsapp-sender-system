@@ -212,6 +212,7 @@ export class PublicApiController {
       mediaType: dto.mediaType,
       mediaUrl: dto.mediaUrl,
       caption: dto.caption,
+      fileName: dto.fileName,
       file,
     });
   }
