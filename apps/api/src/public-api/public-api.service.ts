@@ -13,6 +13,7 @@ import {
   RecipientKind,
   ResolvedChannelRecipient,
   ResolvedGroupRecipient,
+  buildMessageJid,
   parseChannelInviteCode,
   parseGroupInviteCode,
   resolveChannelRecipient,
@@ -21,7 +22,7 @@ import {
   WhatsAppGroupInfo,
   WhatsAppNewsletterInfo,
 } from '@whatsapp-sender/contracts';
-import { MessageStatus, SessionStatus } from '@whatsapp-sender/database';
+import { ChatDirection, MessageStatus, Prisma, SessionStatus } from '@whatsapp-sender/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { UsageService } from '../common/usage.service';
@@ -89,6 +90,143 @@ export class PublicApiService {
       createdAt: message.createdAt,
       updatedAt: message.updatedAt,
     };
+  }
+
+  /**
+   * Chat history for the session — inbound + outbound messages the worker
+   * captured from WhatsApp. Optionally filtered to a single chat (`chatJid`,
+   * a group `...@g.us`, contact `...@s.whatsapp.net`, or `...@newsletter`) and
+   * a direction. Cursor-paginated newest-first.
+   */
+  async listChatMessages(
+    apiKey: string,
+    opts: { chatJid?: string; direction?: 'inbound' | 'outbound'; limit?: number; cursor?: string },
+  ) {
+    const session = await this.resolveSession(apiKey, 'read');
+    return this.listChatMessagesForSession(session, opts);
+  }
+
+  async listGroupMessages(
+    apiKey: string,
+    opts: {
+      groupJid?: string;
+      inviteCode?: string;
+      direction?: 'inbound' | 'outbound';
+      limit?: number;
+      cursor?: string;
+    },
+  ) {
+    const session = await this.resolveSession(apiKey, 'read');
+    const resolved = resolveGroupRecipient({ groupJid: opts.groupJid, inviteCode: opts.inviteCode });
+    if (!resolved) {
+      throw new BadRequestException('Provide either groupJid or inviteCode (not both)');
+    }
+
+    const groupJid =
+      resolved.recipient && resolved.recipient.length > 0
+        ? resolved.recipient
+        : await this.joinGroupForSession(session, resolved.inviteCode!);
+
+    return this.listChatMessagesForSession(session, {
+      chatJid: groupJid,
+      direction: opts.direction,
+      limit: opts.limit,
+      cursor: opts.cursor,
+    });
+  }
+
+  private async listChatMessagesForSession(
+    session: SessionRow,
+    opts: { chatJid?: string; direction?: 'inbound' | 'outbound'; limit?: number; cursor?: string },
+  ) {
+    const limit = this.normalizeLimit(opts.limit);
+    const chatJid = opts.chatJid?.trim();
+
+    const where: Prisma.ChatMessageWhereInput = { sessionId: session.id };
+    if (chatJid) {
+      where.chatJid = buildMessageJid(chatJid);
+    }
+    if (opts.direction === 'inbound') {
+      where.direction = ChatDirection.INBOUND;
+    } else if (opts.direction === 'outbound') {
+      where.direction = ChatDirection.OUTBOUND;
+    }
+
+    const rows = await this.prisma.client.chatMessage.findMany({
+      where,
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
+      select: {
+        id: true,
+        waMessageId: true,
+        chatJid: true,
+        senderJid: true,
+        fromMe: true,
+        direction: true,
+        isGroup: true,
+        pushName: true,
+        messageType: true,
+        content: true,
+        mediaType: true,
+        timestamp: true,
+      },
+    });
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
+    return {
+      messages: page.map((m) => ({
+        id: m.id,
+        messageId: m.waMessageId,
+        chatJid: m.chatJid,
+        senderJid: m.senderJid,
+        fromMe: m.fromMe,
+        direction: m.direction.toLowerCase(),
+        isGroup: m.isGroup,
+        pushName: m.pushName,
+        type: m.messageType,
+        content: m.content,
+        mediaType: m.mediaType,
+        timestamp: m.timestamp,
+      })),
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+    };
+  }
+
+  /**
+   * Overview of chats seen on the session — one entry per chat with its message
+   * count and most recent activity, newest-active first.
+   */
+  async listChats(apiKey: string, opts: { limit?: number }) {
+    const session = await this.resolveSession(apiKey, 'read');
+    const limit = this.normalizeLimit(opts.limit);
+
+    const grouped = await this.prisma.client.chatMessage.groupBy({
+      by: ['chatJid', 'isGroup'],
+      where: { sessionId: session.id },
+      _count: { _all: true },
+      _max: { timestamp: true },
+      orderBy: { _max: { timestamp: 'desc' } },
+      take: limit,
+    });
+
+    return {
+      chats: grouped.map((g) => ({
+        chatJid: g.chatJid,
+        isGroup: g.isGroup,
+        messageCount: g._count._all,
+        lastMessageAt: g._max.timestamp,
+      })),
+    };
+  }
+
+  private normalizeLimit(limit?: number): number {
+    if (typeof limit !== 'number' || !Number.isFinite(limit)) {
+      return 50;
+    }
+    return Math.min(Math.max(Math.trunc(limit), 1), 200);
   }
 
   async sendGroupMessage(
@@ -421,7 +559,7 @@ export class PublicApiService {
     return this[field]!;
   }
 
-  private async resolveSession(apiKey: string | undefined, scope: 'send' | 'media') {
+  private async resolveSession(apiKey: string | undefined, scope: 'send' | 'media' | 'read') {
     if (!apiKey) {
       throw new UnauthorizedException({
         statusCode: 401,

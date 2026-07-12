@@ -134,6 +134,114 @@ x-api-key: sk_live_<session_key>
 }
 ```
 
+## Chat history
+
+Read messages the connected session has observed — **inbound and outbound**, 1:1, group, and channel. WhatsApp exposes no history-fetch API, so a session records messages from the moment it connects (plus the initial history sync WhatsApp pushes on link). These are **read** operations: they require only a connected session and do **not** consume send quota.
+
+### List messages
+
+```http
+GET /api/v1/whatsapp/public/messages?chatJid=120363123456789012@g.us&limit=20
+x-api-key: sk_live_<session_key>
+```
+
+Compatibility aliases (same response shape):
+
+```http
+GET /api/v1/whatsapp/public/message/list
+GET /api/v1/whatsapp/public/message/history
+```
+
+Query parameters (all optional):
+
+| Param | Meaning |
+|-------|---------|
+| `chatJid` | Filter to one chat. Group `...@g.us`, contact digits or `...@s.whatsapp.net`, or channel `...@newsletter`. Omit for all chats. |
+| `direction` | `inbound` or `outbound`. Omit for both. |
+| `limit` | 1–200, default 50. |
+| `cursor` | Pass `nextCursor` from the previous page to page further back. |
+
+**Success (200):** newest-first.
+
+```json
+{
+  "messages": [
+    {
+      "id": "clx...",
+      "messageId": "ABGGF...",
+      "chatJid": "120363123456789012@g.us",
+      "senderJid": "201277785111@s.whatsapp.net",
+      "fromMe": false,
+      "direction": "inbound",
+      "isGroup": true,
+      "pushName": "Ali",
+      "type": "conversation",
+      "content": "Hello group",
+      "mediaType": null,
+      "timestamp": "2026-07-01T12:00:00.000Z"
+    }
+  ],
+  "nextCursor": "clx..."
+}
+```
+
+### List messages for one chat (path form)
+
+```http
+GET /api/v1/whatsapp/public/chats/:chatJid/messages?limit=50&cursor=<id>
+x-api-key: sk_live_<session_key>
+```
+
+`chatJid` can be:
+- Group JID `...@g.us`
+- Contact digits or `...@s.whatsapp.net`
+- Channel JID `...@newsletter`
+
+### List group messages
+
+```http
+GET /api/v1/whatsapp/public/groups/messages?groupJid=120363123456789012@g.us&limit=50
+x-api-key: sk_live_<session_key>
+```
+
+Or resolve by invite code (API joins/resolves to the group JID first):
+
+```http
+GET /api/v1/whatsapp/public/groups/messages?inviteCode=https://chat.whatsapp.com/IGc4V99IZkx4MOT3wwNIY8
+x-api-key: sk_live_<session_key>
+```
+
+Path variant:
+
+```http
+GET /api/v1/whatsapp/public/groups/:groupJid/messages?limit=50
+x-api-key: sk_live_<session_key>
+```
+
+### List chats
+
+```http
+GET /api/v1/whatsapp/public/chats?limit=50
+x-api-key: sk_live_<session_key>
+```
+
+**Success (200):**
+
+```json
+{
+  "chats": [
+    {
+      "chatJid": "120363123456789012@g.us",
+      "isGroup": true,
+      "messageCount": 42,
+      "lastMessageAt": "2026-07-01T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+> **Note:** History reflects what the session captured while connected — it is not a full backfill of the chat's entire past. Media messages are recorded with `mediaType` + caption (`content`); binary media is not stored.
+
 ## Send media
 
 ### 1:1

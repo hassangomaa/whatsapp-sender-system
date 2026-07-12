@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -26,6 +27,14 @@ import {
 export class PublicApiController {
   constructor(private readonly publicApi: PublicApiService) {}
 
+  private parseLimit(limit?: string): number | undefined {
+    if (!limit) {
+      return undefined;
+    }
+    const parsed = Number(limit);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
   @Post('message/send')
   @HttpCode(200)
   sendMessage(
@@ -42,6 +51,109 @@ export class PublicApiController {
   @Get('message/:messageId')
   getMessage(@Headers('x-api-key') apiKey: string, @Param('messageId') messageId: string) {
     return this.publicApi.getMessage(apiKey, messageId);
+  }
+
+  @Get('messages')
+  listMessages(
+    @Headers('x-api-key') apiKey: string,
+    @Query('chatJid') chatJid?: string,
+    @Query('direction') direction?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.publicApi.listChatMessages(apiKey, {
+      chatJid,
+      direction: direction === 'inbound' || direction === 'outbound' ? direction : undefined,
+      limit: this.parseLimit(limit),
+      cursor,
+    });
+  }
+
+  @Get('message/list')
+  listMessagesLegacyList(
+    @Headers('x-api-key') apiKey: string,
+    @Query('chatJid') chatJid?: string,
+    @Query('direction') direction?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.publicApi.listChatMessages(apiKey, {
+      chatJid,
+      direction: direction === 'inbound' || direction === 'outbound' ? direction : undefined,
+      limit: this.parseLimit(limit),
+      cursor,
+    });
+  }
+
+  @Get('message/history')
+  listMessagesLegacyHistory(
+    @Headers('x-api-key') apiKey: string,
+    @Query('chatJid') chatJid?: string,
+    @Query('direction') direction?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.publicApi.listChatMessages(apiKey, {
+      chatJid,
+      direction: direction === 'inbound' || direction === 'outbound' ? direction : undefined,
+      limit: this.parseLimit(limit),
+      cursor,
+    });
+  }
+
+  @Get('groups/messages')
+  listGroupMessages(
+    @Headers('x-api-key') apiKey: string,
+    @Query('groupJid') groupJid?: string,
+    @Query('inviteCode') inviteCode?: string,
+    @Query('direction') direction?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.publicApi.listGroupMessages(apiKey, {
+      groupJid,
+      inviteCode,
+      direction: direction === 'inbound' || direction === 'outbound' ? direction : undefined,
+      limit: this.parseLimit(limit),
+      cursor,
+    });
+  }
+
+  @Get('groups/:groupJid/messages')
+  listGroupMessagesByPath(
+    @Headers('x-api-key') apiKey: string,
+    @Param('groupJid') groupJid: string,
+    @Query('direction') direction?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.publicApi.listGroupMessages(apiKey, {
+      groupJid,
+      direction: direction === 'inbound' || direction === 'outbound' ? direction : undefined,
+      limit: this.parseLimit(limit),
+      cursor,
+    });
+  }
+
+  @Get('chats/:chatJid/messages')
+  listChatMessagesByPath(
+    @Headers('x-api-key') apiKey: string,
+    @Param('chatJid') chatJid: string,
+    @Query('direction') direction?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.publicApi.listChatMessages(apiKey, {
+      chatJid,
+      direction: direction === 'inbound' || direction === 'outbound' ? direction : undefined,
+      limit: this.parseLimit(limit),
+      cursor,
+    });
+  }
+
+  @Get('chats')
+  listChats(@Headers('x-api-key') apiKey: string, @Query('limit') limit?: string) {
+    return this.publicApi.listChats(apiKey, { limit: this.parseLimit(limit) });
   }
 
   @Post('media/send')
