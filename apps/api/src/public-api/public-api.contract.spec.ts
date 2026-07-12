@@ -8,6 +8,8 @@ import {
   resolvePhoneRecipient,
   parseGroupInviteCode,
   parseChannelInviteCode,
+  buildMessageJid,
+  extractWhatsappMessageContent,
 } from '@whatsapp-sender/contracts';
 
 /**
@@ -96,5 +98,44 @@ describe('Public API contract (consumer shapes)', () => {
     for (const body of responses) {
       expect(body.id ?? body.messageId).toBeTruthy();
     }
+  });
+
+  it('builds chat-history filter JID from phone or group', () => {
+    // GET /messages?chatJid=... accepts raw digits or a full group JID.
+    expect(buildMessageJid('201277785111')).toBe('201277785111@s.whatsapp.net');
+    expect(buildMessageJid('120363123456789012@g.us')).toBe('120363123456789012@g.us');
+  });
+
+  it('extracts chat-history content from Baileys messages', () => {
+    expect(extractWhatsappMessageContent({ conversation: 'hi' })).toEqual({
+      type: 'conversation',
+      text: 'hi',
+      mediaType: null,
+    });
+    expect(extractWhatsappMessageContent({ imageMessage: { caption: 'pic' } })).toEqual({
+      type: 'imageMessage',
+      text: 'pic',
+      mediaType: 'image',
+    });
+  });
+
+  it('defines expected chat-history message shape', () => {
+    const message = {
+      id: 'clx123',
+      messageId: 'ABGGF...',
+      chatJid: '120363123456789012@g.us',
+      senderJid: '201277785111@s.whatsapp.net',
+      fromMe: false,
+      direction: 'inbound',
+      isGroup: true,
+      pushName: 'Ali',
+      type: 'conversation',
+      content: 'Hello group',
+      mediaType: null,
+      timestamp: new Date().toISOString(),
+    };
+    expect(['inbound', 'outbound']).toContain(message.direction);
+    expect(message.id).toBeTruthy();
+    expect(message.chatJid).toMatch(/@(g\.us|s\.whatsapp\.net|newsletter)$/);
   });
 });

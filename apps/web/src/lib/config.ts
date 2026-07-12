@@ -37,5 +37,7 @@ export const API_ENDPOINTS = {
   channelsResolve: '/api/v1/whatsapp/public/channels/resolve',
   channelsMessageSend: '/api/v1/whatsapp/public/channels/message/send',
   channelsMediaSend: '/api/v1/whatsapp/public/channels/media/send',
+  messages: '/api/v1/whatsapp/public/messages',
+  chats: '/api/v1/whatsapp/public/chats',
   sessions: '/api/v1/sessions',
 } as const;

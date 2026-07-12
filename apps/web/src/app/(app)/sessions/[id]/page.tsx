@@ -252,6 +252,11 @@ export default function SessionDetailPage() {
   -H 'Content-Type: application/json' \\
   -H 'x-api-key: ${keyForCurl}' \\
   -d '{"inviteCode":"https://whatsapp.com/channel/0029VbDBuwIHbFVD3rXDzs3l","content":"Channel post"}'`;
+  const historyUrl = `${getApiUrl()}${API_ENDPOINTS.messages}`;
+  const historyCurlExample = `curl -G '${historyUrl}' \\
+  -H 'x-api-key: ${keyForCurl}' \\
+  --data-urlencode 'chatJid=120363123456789012@g.us' \\
+  --data-urlencode 'limit=20'`;
 
   const statusLabel = connecting && session.status === 'connected'
     ? 'reconnecting'
@@ -452,7 +457,9 @@ export default function SessionDetailPage() {
         <p className="text-xs text-[var(--muted)] mb-2 font-medium">Group message</p>
         <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl mb-4">{groupCurlExample}</pre>
         <p className="text-xs text-[var(--muted)] mb-2 font-medium">Channel message</p>
-        <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{channelCurlExample}</pre>
+        <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl mb-4">{channelCurlExample}</pre>
+        <p className="text-xs text-[var(--muted)] mb-2 font-medium">Chat history (a group&apos;s last messages)</p>
+        <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{historyCurlExample}</pre>
       </div>
     </div>
   );

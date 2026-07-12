@@ -14,6 +14,7 @@ const SECTIONS = [
   { id: 'groups', label: 'Groups' },
   { id: 'channels', label: 'Channels' },
   { id: 'media', label: 'Media send' },
+  { id: 'history', label: 'Chat history' },
   { id: 'webhooks', label: 'Webhooks' },
   { id: 'limits', label: 'Quota & limits' },
   { id: 'playground', label: 'Playground' },
@@ -56,6 +57,21 @@ export default function DocsPage() {
   -F 'mediaType=image' \\
   -F 'caption=Hello' \\
   -F 'file=@/path/to/image.jpg'`,
+    [apiUrl],
+  );
+
+  const historyExample = useMemo(
+    () => `# Last messages of a group (or contact / channel) — newest first
+curl -G '${apiUrl}${API_ENDPOINTS.messages}' \\
+  -H 'x-api-key: sk_live_<your_session_key>' \\
+  --data-urlencode 'chatJid=120363123456789012@g.us' \\
+  --data-urlencode 'limit=20'`,
+    [apiUrl],
+  );
+
+  const chatsExample = useMemo(
+    () => `curl '${apiUrl}${API_ENDPOINTS.chats}' \\
+  -H 'x-api-key: sk_live_<your_session_key>'`,
     [apiUrl],
   );
 
@@ -158,12 +174,42 @@ export default function DocsPage() {
           <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{mediaExample}</pre>
         </section>
 
+        <section id="history" className="card p-6 space-y-4 scroll-mt-6">
+          <h2 className="font-semibold text-lg">Chat history</h2>
+          <p className="text-sm text-[var(--muted)]">
+            Read inbound <strong>and</strong> outbound messages captured on the connected session — including a
+            group&apos;s recent messages. WhatsApp has no history-fetch API, so the session records messages from the
+            moment it connects (plus the initial history sync WhatsApp pushes on link). Reads don&apos;t count against
+            your send quota.
+          </p>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <h3 className="font-medium text-sm">GET {API_ENDPOINTS.messages}</h3>
+            <CopyButton text={historyExample} label="Copy curl" />
+          </div>
+          <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{historyExample}</pre>
+          <ul className="text-sm space-y-1 list-disc pl-5 text-[var(--muted)]">
+            <li><code className="text-xs">chatJid</code> — filter to one chat: group <code className="text-xs">...@g.us</code>, contact digits / <code className="text-xs">...@s.whatsapp.net</code>, or channel <code className="text-xs">...@newsletter</code> (optional)</li>
+            <li><code className="text-xs">direction</code> — <code className="text-xs">inbound</code> or <code className="text-xs">outbound</code> (optional)</li>
+            <li><code className="text-xs">limit</code> — 1–200, default 50 · <code className="text-xs">cursor</code> — pass <code className="text-xs">nextCursor</code> from the previous page</li>
+          </ul>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <h3 className="font-medium text-sm">GET {API_ENDPOINTS.chats}</h3>
+            <CopyButton text={chatsExample} label="Copy curl" />
+          </div>
+          <p className="text-sm text-[var(--muted)]">List chats seen on the session with per-chat message counts and last activity.</p>
+          <pre className="text-xs overflow-x-auto bg-black/5 dark:bg-white/5 p-4 rounded-xl">{chatsExample}</pre>
+        </section>
+
         <section id="webhooks" className="card p-6 space-y-3 scroll-mt-6">
           <h2 className="font-semibold text-lg">Webhooks</h2>
           <p className="text-sm text-[var(--muted)]">
             Signed with <code className="text-xs">X-Webhook-Signature</code> (HMAC-SHA256). Configure on session detail or{' '}
             <Link href="/settings" className="text-brand">Settings</Link>.
           </p>
+          <ul className="text-sm space-y-1 list-disc pl-5 text-[var(--muted)]">
+            <li><code className="text-xs">message.sent</code> / <code className="text-xs">message.failed</code> — outbound delivery status</li>
+            <li><code className="text-xs">message.received</code> — a new inbound message arrived (also stored for <a href="#history" className="text-brand">Chat history</a>)</li>
+          </ul>
           <Link href="/webhooks" className="btn-secondary text-sm inline-flex">View delivery log →</Link>
         </section>
 

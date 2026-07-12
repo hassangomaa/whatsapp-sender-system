@@ -36,6 +36,11 @@ enum CampaignRecipientStatus {
   SKIPPED
 }
 
+enum ChatDirection {
+  INBOUND
+  OUTBOUND
+}
+
 model User {
   id              String    @id @default(cuid())
   email           String?   @unique
@@ -63,6 +68,7 @@ model Workspace {
   members      WorkspaceMember[]
   sessions     WhatsappSession[]
   messages     Message[]
+  chatMessages ChatMessage[]
   campaigns    Campaign[]
   subscription Subscription?
   usage        UsageCounter?
@@ -117,9 +123,10 @@ model WhatsappSession {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  messages  Message[]
-  campaigns Campaign[]
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages     Message[]
+  chatMessages ChatMessage[]
+  campaigns    Campaign[]
 
   @@index([workspaceId])
   @@map("whatsapp_sessions")
@@ -148,6 +155,36 @@ model Message {
   @@index([workspaceId, createdAt])
   @@index([sessionId])
   @@map("messages")
+}
+
+/// Inbound + outbound WhatsApp messages observed on a live session.
+/// Populated by the worker from Baileys `messages.upsert` and
+/// `messaging-history.set` events so the public API can serve chat history.
+model ChatMessage {
+  id          String        @id @default(cuid())
+  workspaceId String        @map("workspace_id")
+  sessionId   String        @map("session_id")
+  waMessageId String        @map("wa_message_id")
+  chatJid     String        @map("chat_jid")
+  senderJid   String?       @map("sender_jid")
+  fromMe      Boolean       @default(false) @map("from_me")
+  direction   ChatDirection
+  isGroup     Boolean       @default(false) @map("is_group")
+  pushName    String?       @map("push_name")
+  messageType String?       @map("message_type")
+  content     String?
+  mediaType   String?       @map("media_type")
+  timestamp   DateTime
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  session   WhatsappSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, waMessageId])
+  @@index([sessionId, chatJid, timestamp])
+  @@index([sessionId, timestamp])
+  @@index([workspaceId, timestamp])
+  @@map("chat_messages")
 }
 
 model Plan {

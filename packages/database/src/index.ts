@@ -5,12 +5,14 @@ export {
   MessageStatus,
   CampaignStatus,
   CampaignRecipientStatus,
+  ChatDirection,
 } from '@prisma/client';
 export type {
   User,
   Workspace,
   WhatsappSession,
   Message,
+  ChatMessage,
   Plan,
   Subscription,
   UsageCounter,

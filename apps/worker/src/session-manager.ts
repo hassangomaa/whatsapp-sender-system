@@ -6,12 +6,20 @@ import { Boom } from '@hapi/boom';
 import * as fs from 'fs';
 import * as path from 'path';
 import QRCode from 'qrcode';
-import { prisma, SessionStatus } from '@whatsapp-sender/database';
+import { Prisma, prisma, SessionStatus } from '@whatsapp-sender/database';
 import { WHATSAPP_QR_REFRESH_SECONDS, buildMessageJid } from '@whatsapp-sender/contracts';
 import { publishSessionEvent, refreshSessionLive, setSessionLive } from './redis';
 import { issueApiKeyIfNeeded } from './issue-api-key';
 import { enqueueAdminNotify } from './admin-notify-queue';
 import { resolveCloseAction } from './session-close';
+import { persistChatMessages } from './chat-history';
+import { scheduleWebhook } from './webhook-queue';
+
+interface SessionMeta {
+  workspaceId: string;
+  webhookUrl: string | null;
+  scopeWebhook: boolean;
+}
 
 const sessionsDir = path.join(process.cwd(), 'sessions');
 const MOCK_AUTO_CONNECT_MS = Number(process.env.BAILEYS_MOCK_CONNECT_MS ?? 3000);
@@ -38,6 +46,7 @@ export class SessionManager {
   private mockTimers = new Map<string, { connect: NodeJS.Timeout; refresh: NodeJS.Timeout }>();
   private initInFlight = new Set<string>();
   private reconnectAttempts = new Map<string, number>();
+  private sessionMeta = new Map<string, SessionMeta>();
   private reconnectTimers = new Map<string, NodeJS.Timeout>();
 
   isConnected(sessionId: string): boolean {
@@ -51,6 +60,48 @@ export class SessionManager {
 
   isReconnectPending(sessionId: string): boolean {
     return this.reconnectTimers.has(sessionId);
+  }
+
+  /** Cached workspace + webhook config for a session (for chat-history writes). */
+  private async getSessionMeta(sessionId: string): Promise<SessionMeta | null> {
+    const cached = this.sessionMeta.get(sessionId);
+    if (cached) return cached;
+    const row = await prisma.whatsappSession.findUnique({
+      where: { id: sessionId },
+      select: { workspaceId: true, webhookUrl: true, scopeWebhook: true },
+    });
+    if (!row) return null;
+    const meta: SessionMeta = {
+      workspaceId: row.workspaceId,
+      webhookUrl: row.webhookUrl,
+      scopeWebhook: row.scopeWebhook,
+    };
+    this.sessionMeta.set(sessionId, meta);
+    return meta;
+  }
+
+  /** Fire a `message.received` webhook for each live inbound chat message. */
+  private async dispatchInboundWebhooks(
+    sessionId: string,
+    meta: SessionMeta,
+    rows: Prisma.ChatMessageCreateManyInput[],
+  ) {
+    if (!meta.webhookUrl || !meta.scopeWebhook) return;
+    for (const row of rows) {
+      if (row.fromMe) continue;
+      const timestamp = row.timestamp instanceof Date ? row.timestamp : new Date(row.timestamp);
+      await scheduleWebhook(meta.webhookUrl, meta.workspaceId, sessionId, row.waMessageId, {
+        event: 'message.received',
+        messageId: row.waMessageId,
+        chatJid: row.chatJid,
+        senderJid: row.senderJid ?? null,
+        isGroup: row.isGroup ?? false,
+        pushName: row.pushName ?? null,
+        content: row.content ?? null,
+        mediaType: row.mediaType ?? null,
+        timestamp: timestamp.toISOString(),
+      });
+    }
   }
 
   private findLiveSessionByPhone(
@@ -180,6 +231,40 @@ export class SessionManager {
       this.sockets.set(sessionId, sock);
       sock.ev.on('creds.update', saveCreds);
 
+      // Chat history: persist messages we send + receive so the public API can
+      // serve them later. Baileys has no history-fetch API, so we capture the
+      // initial history sync and everything going forward.
+      sock.ev.on('messaging-history.set', async ({ messages }) => {
+        if (!messages?.length) return;
+        try {
+          const meta = await this.getSessionMeta(sessionId);
+          if (meta) {
+            await persistChatMessages(sessionId, meta.workspaceId, messages);
+          }
+        } catch (err) {
+          logSession(sessionId, 'history sync persist failed', {
+            error: err instanceof Error ? err.message : 'unknown',
+          });
+        }
+      });
+
+      sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (!messages?.length) return;
+        try {
+          const meta = await this.getSessionMeta(sessionId);
+          if (!meta) return;
+          const persisted = await persistChatMessages(sessionId, meta.workspaceId, messages);
+          // Only live (`notify`) inbound messages fire the received webhook.
+          if (type === 'notify') {
+            await this.dispatchInboundWebhooks(sessionId, meta, persisted);
+          }
+        } catch (err) {
+          logSession(sessionId, 'messages.upsert persist failed', {
+            error: err instanceof Error ? err.message : 'unknown',
+          });
+        }
+      });
+
       sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -229,6 +314,12 @@ export class SessionManager {
             where: { id: sessionId },
           });
           if (sessionRow) {
+            // Refresh chat-history / webhook metadata cache on (re)connect.
+            this.sessionMeta.set(sessionId, {
+              workspaceId: sessionRow.workspaceId,
+              webhookUrl: sessionRow.webhookUrl,
+              scopeWebhook: sessionRow.scopeWebhook,
+            });
             const { isUnlimitedWorkspace } = await import('./platform-workspace');
             if (!(await isUnlimitedWorkspace(sessionRow.workspaceId))) {
               const { loadClientAuditContext, formatWorkerSessionConnected } = await import(
@@ -348,6 +439,7 @@ export class SessionManager {
       }
       this.sockets.delete(sessionId);
     }
+    this.sessionMeta.delete(sessionId);
     await this.clearLiveStatus(sessionId);
     await this.clearAuthState(sessionId);
     await prisma.whatsappSession.update({
