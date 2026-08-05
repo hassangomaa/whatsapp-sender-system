@@ -144,14 +144,20 @@ export default function PackagesPage() {
             <p className="text-sm text-[var(--muted)] mt-4">Included with every new workspace</p>
           </div>
         )}
-        {paidPlans.map((plan) => (
+        {paidPlans.map((plan) => {
+          const unlimited = plan.messageLimit >= 1_000_000;
+          return (
           <div key={plan.id} className="card p-6 flex flex-col">
             <h3 className="font-semibold text-lg">{plan.name}</h3>
-            <p className="text-3xl font-bold mt-2">{plan.messageLimit.toLocaleString()}</p>
-            <p className="text-sm text-[var(--muted)]">messages / period</p>
+            <p className="text-3xl font-bold mt-2">
+              {unlimited ? 'Unlimited' : plan.messageLimit.toLocaleString()}
+            </p>
+            <p className="text-sm text-[var(--muted)]">
+              {unlimited ? 'OTP / fair-use · rate-limited' : 'messages / month'}
+            </p>
             <ul className="text-sm text-[var(--muted)] mt-3 space-y-1 flex-1">
               <li>{plan.maxSessions} WhatsApp session{plan.maxSessions !== 1 ? 's' : ''}</li>
-              <li>{(plan.priceCents / 100).toFixed(0)} EGP</li>
+              <li>{(plan.priceCents / 100).toFixed(0)} EGP / month</li>
             </ul>
             <Button
               className="mt-4 w-full"
@@ -161,7 +167,8 @@ export default function PackagesPage() {
               Activate {plan.name}
             </Button>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="card p-5 flex flex-col sm:flex-row gap-3">

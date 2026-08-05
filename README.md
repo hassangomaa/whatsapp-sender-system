@@ -128,15 +128,18 @@ Interactive reference: http://localhost:3011/docs (URLs update from `NEXT_PUBLIC
 
 ---
 
-## Plans & quotas
+## Plans & quotas (EGP)
 
-| Plan | Messages / month | Sessions |
-|------|------------------|----------|
-| Trial | 30 | 1 |
-| Starter | 500 | 3 |
-| Pro | 5,000 | 10 |
+| Plan | Messages / month | Sessions | Price |
+|------|------------------|----------|-------|
+| Trial | 30 | 1 | Free |
+| Starter | 1,000 | 1 | 149 EGP |
+| Growth | 10,000 | 3 | 399 EGP |
+| Unlimited OTP | Fair-use (1M cap) | 1 | 449 EGP |
+| Agency | Fair-use (1M cap) | 3 | 1,199 EGP |
+| Scale | Fair-use (1M cap) | 10 | 2,999 EGP |
 
-Redeem code for testing: `WELCOME100`. Enforced by `QuotaGuard` on send and session creation.
+Priced from Hostinger VPS session capacity vs Ultramsg / Whapi / Wasender (≈51 EGP/USD). Redeem code for testing: `WELCOME100`. Enforced by `QuotaGuard` on send and session creation.
 
 ---
 
