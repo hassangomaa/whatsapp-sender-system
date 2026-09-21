@@ -57,7 +57,25 @@ Flow: register → create session → init (mock connect) → public send → we
 3. Health loop (every 30s) triggers reconnect when auth files exist but the in-memory socket is missing — it no longer marks sessions disconnected just because the worker was briefly down.
 4. User-initiated disconnect or phone “Log out linked device” → scan QR again (`BAILEYS_MOCK=0` only).
 
-**Tip:** Production mounts `baileys_sessions` volume (`docker-compose.prod.yml`) so auth survives container restarts. Tune persistence via `SESSION_HEALTH_*` and `SESSION_RECONNECT_MAX_DELAY_MS` in `.env`.
+**Tip:** Production mounts `baileys_sessions` volume (`docker-compose.prod.yml`) so auth survives container restarts. Tune persistence via `SESSION_HEALTH_*`, `SESSION_RECONNECT_MAX_DELAY_MS`, `SESSION_RECONNECT_MAX_ATTEMPTS`, `SESSION_HOLD_COOLDOWN_MS` in `.env`.
+
+### Permanent session SOP (hold vs logout)
+
+Design: [PRP-STABLE-WA-SESSIONS.md](PRP-STABLE-WA-SESSIONS.md). Auth on disk is wiped **only** on a true device logout (`conflict type="device_removed"`, or `<failure reason="401">`) or an explicit user Disconnect. Everything else keeps `creds.json`:
+
+| Close signal | Worker action |
+|---|---|
+| `401` + `conflict type="replaced"`, `440` | **hold** (`replaced`) — same creds opened elsewhere (old container / zombie socket) |
+| `401` stream conflict, unknown type | **hold** (`conflict`) |
+| `403` / `500` / transient | restore with backoff |
+| 15 consecutive failed restores (`SESSION_RECONNECT_MAX_ATTEMPTS`) | **hold** (`max_attempts`) |
+| `401` + `device_removed` / `401 Connection Failure` | logout — auth wiped, phone cleared, **API key kept** |
+
+**Hold** = socket closed, DB `DISCONNECTED`, phone + auth + API key kept, Redis `session:{id}:hold` for `SESSION_HOLD_COOLDOWN_MS` (15 min). Health loop and boot restore skip held sessions; after the cooldown they retry **once** (attempt counter is not reset). Dashboard shows *"…paused. Click Init / QR to re-pair."*
+
+**Re-pair:** clicking **Init / QR** on a held session clears the hold + stale auth (keeps phone + API key) and shows a fresh QR. Remove the stale link on the phone (Linked devices) **before** scanning.
+
+**Success check after any deploy:** `docker compose restart worker` → session `CONNECTED` within 90s, no QR; worker logs show `action":"restore"` only, never `action":"logout"` for a healthy number.
 
 After upgrading, apply schema changes **inside Docker** (do not run `npm run db:push` on the VPS host — Prisma is not installed there):
 
