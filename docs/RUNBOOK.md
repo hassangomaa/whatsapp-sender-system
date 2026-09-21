@@ -235,3 +235,18 @@ Update in `ttakka-apis` / `egy-guests-apis`:
 WHATSAPP_SENDER_BASE_URL=https://api.yourdomain.com
 WHATSAPP_SENDER_API_KEY=sk_live_...
 ```
+
+## AI auto-reply (Gemini)
+
+Worker answers inbound **1:1 text** messages with Gemini (`apps/worker/src/ai-autoreply.ts`). Groups, status, newsletters, own messages and media are never answered.
+
+| Env | Meaning |
+|---|---|
+| `AI_AUTOREPLY_ENABLED=1` + `GEMINI_API_KEY` | both required to turn it on |
+| `AI_AUTOREPLY_SESSION_IDS` | comma list of session ids; empty = all sessions |
+| `AI_AUTOREPLY_SYSTEM_PROMPT` | persona (default: brief bilingual AR/EN business assistant) |
+| `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` | `gemini-2.5-flash` → `gemini-2.5-flash-lite` on transient 429/5xx |
+| `AI_AUTOREPLY_HISTORY` | prior turns from chat history sent as context (10) |
+| `AI_AUTOREPLY_MAX_PER_HOUR` / `AI_AUTOREPLY_COOLDOWN_MS` | per-contact caps (30/h, 3s) |
+
+Guards in Redis: `ai:seen:{session}:{waMessageId}` (exactly-once per message, 24h), `ai:cooldown:*`, `ai:hour:*`. Logs: `[ai-autoreply] replied …` / `rate-limited` / `gemini failed (last status N)`. Change env → `docker compose … up -d worker`.

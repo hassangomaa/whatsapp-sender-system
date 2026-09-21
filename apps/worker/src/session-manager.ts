@@ -21,6 +21,7 @@ import { enqueueAdminNotify } from './admin-notify-queue';
 import { extractConflictType, HoldReason, resolveCloseAction } from './session-close';
 import { persistChatMessages } from './chat-history';
 import { scheduleWebhook } from './webhook-queue';
+import { maybeAutoReply } from './ai-autoreply';
 
 interface SessionMeta {
   workspaceId: string;
@@ -289,6 +290,9 @@ export class SessionManager {
           // Only live (`notify`) inbound messages fire the received webhook.
           if (type === 'notify') {
             await this.dispatchInboundWebhooks(sessionId, meta, persisted);
+            await maybeAutoReply(sessionId, persisted, (jid, text) =>
+              sock.sendMessage(jid, { text }),
+            );
           }
         } catch (err) {
           logSession(sessionId, 'messages.upsert persist failed', {
