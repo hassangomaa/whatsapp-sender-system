@@ -39,6 +39,10 @@ export function startHealthLoop() {
           if (sessionManager.isReconnectPending(session.id)) {
             continue;
           }
+          // On hold: auth kept, restore paused until cooldown expiry or manual Init.
+          if (await sessionManager.isHeld(session.id)) {
+            continue;
+          }
           if (
             session.status === SessionStatus.CONNECTED ||
             session.status === SessionStatus.CONNECTING ||

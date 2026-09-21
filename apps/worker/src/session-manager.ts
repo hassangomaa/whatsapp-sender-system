@@ -8,10 +8,17 @@ import * as path from 'path';
 import QRCode from 'qrcode';
 import { Prisma, prisma, SessionStatus } from '@whatsapp-sender/database';
 import { WHATSAPP_QR_REFRESH_SECONDS, buildMessageJid } from '@whatsapp-sender/contracts';
-import { publishSessionEvent, refreshSessionLive, setSessionLive } from './redis';
+import {
+  clearSessionHold,
+  getSessionHold,
+  publishSessionEvent,
+  refreshSessionLive,
+  setSessionHold,
+  setSessionLive,
+} from './redis';
 import { issueApiKeyIfNeeded } from './issue-api-key';
 import { enqueueAdminNotify } from './admin-notify-queue';
-import { resolveCloseAction } from './session-close';
+import { extractConflictType, HoldReason, resolveCloseAction } from './session-close';
 import { persistChatMessages } from './chat-history';
 import { scheduleWebhook } from './webhook-queue';
 
@@ -24,6 +31,10 @@ interface SessionMeta {
 const sessionsDir = path.join(process.cwd(), 'sessions');
 const MOCK_AUTO_CONNECT_MS = Number(process.env.BAILEYS_MOCK_CONNECT_MS ?? 3000);
 const RECONNECT_MAX_DELAY_MS = Number(process.env.SESSION_RECONNECT_MAX_DELAY_MS ?? 60_000);
+/** Circuit breaker: after this many consecutive failed reconnects the session is put on hold. */
+const RECONNECT_MAX_ATTEMPTS = Number(process.env.SESSION_RECONNECT_MAX_ATTEMPTS ?? 15);
+/** How long a held session waits before the health loop is allowed one more restore attempt. */
+const HOLD_COOLDOWN_MS = Number(process.env.SESSION_HOLD_COOLDOWN_MS ?? 15 * 60_000);
 
 function qrExpiresAt() {
   return Date.now() + WHATSAPP_QR_REFRESH_SECONDS * 1000;
@@ -179,6 +190,11 @@ export class SessionManager {
     await setSessionLive(sessionId, false).catch(() => {});
   }
 
+  /** True while the session is on hold (auth kept, auto-restore paused). */
+  async isHeld(sessionId: string): Promise<boolean> {
+    return Boolean(await getSessionHold(sessionId).catch(() => null));
+  }
+
   private ensureReconnect(sessionId: string) {
     if (!hasAuthFiles(sessionId)) return;
     if (this.reconnectTimers.has(sessionId) || this.initInFlight.has(sessionId)) return;
@@ -204,6 +220,22 @@ export class SessionManager {
       if (row?.disconnectRequestedAt) {
         logSession(sessionId, 'init skipped — disconnect requested');
         return;
+      }
+
+      const hold = await getSessionHold(sessionId).catch(() => null);
+      if (hold) {
+        if (opts.restore) {
+          logSession(sessionId, 'init skipped — session on hold', { reason: hold.reason });
+          return;
+        }
+        // Manual Init / QR on a held session = re-pair: drop hold + stale auth,
+        // keep phone + API keys so the integration key survives the re-scan.
+        logSession(sessionId, 're-pair requested while on hold — clearing auth', {
+          reason: hold.reason,
+        });
+        await clearSessionHold(sessionId);
+        this.resetReconnectState(sessionId);
+        await this.clearAuthState(sessionId);
       }
 
       const restoring = opts.restore || hasAuthFiles(sessionId);
@@ -351,9 +383,21 @@ export class SessionManager {
           const disconnectError = lastDisconnect?.error as Boom | undefined;
           const code = disconnectError?.output?.statusCode;
           const reason = disconnectError?.message;
-          const action = resolveCloseAction(code, hasAuthFiles(sessionId));
+          const conflictType = extractConflictType(disconnectError);
+          const action = resolveCloseAction({
+            code,
+            message: reason,
+            conflictType,
+            hasAuth: hasAuthFiles(sessionId),
+          });
 
-          logSession(sessionId, 'connection closed', { code, reason, action: action.type });
+          logSession(sessionId, 'connection closed', {
+            code,
+            reason,
+            conflictType,
+            action: action.type,
+            ...(action.type === 'hold' ? { holdReason: action.reason } : {}),
+          });
 
           await this.endSocket(sessionId);
 
@@ -372,7 +416,14 @@ export class SessionManager {
             return;
           }
 
+          if (action.type === 'hold') {
+            await this.enterHold(sessionId, action.reason);
+            return;
+          }
+
           if (action.type === 'logout') {
+            // True device logout: wipe auth so the next Init shows a QR. API keys are
+            // kept on purpose — re-pairing the same number must not rotate the key.
             this.resetReconnectState(sessionId);
             await this.clearLiveStatus(sessionId);
             await this.clearAuthState(sessionId);
@@ -382,9 +433,6 @@ export class SessionManager {
                 status: SessionStatus.DISCONNECTED,
                 qrCode: null,
                 phone: null,
-                apiKeyHash: null,
-                apiKeyPrefix: null,
-                apiKeyEncrypted: null,
                 disconnectRequestedAt: null,
               },
             });
@@ -427,6 +475,7 @@ export class SessionManager {
 
   async disconnectSession(sessionId: string) {
     this.resetReconnectState(sessionId);
+    await clearSessionHold(sessionId).catch(() => {});
     this.clearMockTimer(sessionId);
     const sock = this.sockets.get(sessionId);
     if (sock) {
@@ -714,6 +763,10 @@ export class SessionManager {
     }
 
     for (const session of toRestore.values()) {
+      if (await this.isHeld(session.id)) {
+        logSession(session.id, 'restore skipped — session on hold');
+        continue;
+      }
       logSession(session.id, 'restoring persisted session');
       await this.initSession(session.id, { restore: true }).catch((err) => {
         console.error(`Failed to restore session ${session.id}`, err);
@@ -747,6 +800,14 @@ export class SessionManager {
     }
 
     const attempts = this.reconnectAttempts.get(sessionId) ?? 0;
+    if (attempts >= RECONNECT_MAX_ATTEMPTS) {
+      // Circuit breaker — a storm of failed restores is what gets a number logged
+      // out (or banned). Park the session; auth stays on disk.
+      this.enterHold(sessionId, 'max_attempts').catch((err) =>
+        console.error(`Failed to hold session ${sessionId}`, err),
+      );
+      return;
+    }
     const baseDelay = reason === 'restart_pairing' ? 1000 : 2000;
     const delay = Math.min(baseDelay * 2 ** attempts, RECONNECT_MAX_DELAY_MS);
     this.reconnectAttempts.set(sessionId, attempts + 1);
@@ -771,6 +832,35 @@ export class SessionManager {
     }, delay);
 
     this.reconnectTimers.set(sessionId, timer);
+  }
+
+  /**
+   * Park the session: socket closed, auth + phone + API keys kept, auto-restore
+   * paused for HOLD_COOLDOWN_MS. Attempt counter is NOT reset, so an unrecoverable
+   * session costs one attempt per cooldown instead of a fresh storm.
+   */
+  private async enterHold(sessionId: string, reason: HoldReason) {
+    this.clearReconnectTimer(sessionId);
+    await this.endSocket(sessionId);
+    await this.clearLiveStatus(sessionId);
+    await setSessionHold(sessionId, reason, HOLD_COOLDOWN_MS);
+    await prisma.whatsappSession.update({
+      where: { id: sessionId },
+      data: { status: SessionStatus.DISCONNECTED, qrCode: null },
+    });
+    logSession(sessionId, 'session on hold — auth kept, auto-restore paused', {
+      reason,
+      cooldownMs: HOLD_COOLDOWN_MS,
+    });
+    await publishSessionEvent(sessionId, {
+      type: 'error',
+      sessionId,
+      status: 'disconnected',
+      message:
+        reason === 'max_attempts'
+          ? 'WhatsApp keeps rejecting the reconnect — paused. Click Init / QR to re-pair.'
+          : 'This session was opened elsewhere (conflict) — paused. Click Init / QR to re-pair.',
+    });
   }
 
   private resetReconnectState(sessionId: string) {

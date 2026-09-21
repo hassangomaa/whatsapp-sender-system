@@ -6,6 +6,7 @@ const mockInitSession = jest.fn().mockResolvedValue(undefined);
 const mockIsReconnectPending = jest.fn();
 const mockRefreshLiveStatus = jest.fn().mockResolvedValue(undefined);
 const mockClearLiveStatus = jest.fn().mockResolvedValue(undefined);
+const mockIsHeld = jest.fn().mockResolvedValue(false);
 
 jest.mock('./session-manager', () => ({
   sessionManager: {
@@ -15,6 +16,7 @@ jest.mock('./session-manager', () => ({
     isReconnectPending: (...args: unknown[]) => mockIsReconnectPending(...args),
     refreshLiveStatus: (...args: unknown[]) => mockRefreshLiveStatus(...args),
     clearLiveStatus: (...args: unknown[]) => mockClearLiveStatus(...args),
+    isHeld: (...args: unknown[]) => mockIsHeld(...args),
   },
 }));
 
@@ -40,6 +42,7 @@ describe('startHealthLoop', () => {
     jest.useFakeTimers();
     jest.clearAllMocks();
     mockIsReconnectPending.mockReturnValue(false);
+    mockIsHeld.mockResolvedValue(false);
     process.env.BAILEYS_MOCK = '0';
     delete process.env.SESSION_HEALTH_INTERVAL_MS;
     delete process.env.SESSION_STALE_THRESHOLD_MS;
@@ -160,6 +163,26 @@ describe('startHealthLoop', () => {
     mockIsConnected.mockReturnValue(false);
     mockHasAuthFiles.mockReturnValue(true);
     mockIsReconnectPending.mockReturnValue(true);
+
+    const stop = startHealthLoop();
+    await runTick();
+
+    expect(mockInitSession).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('skips restore while the session is on hold (auth kept, breaker/conflict)', async () => {
+    mockFindMany.mockResolvedValue([
+      {
+        id: 's1',
+        status: SessionStatus.DISCONNECTED,
+        phone: '201200000000',
+        lastConnectedAt: new Date(),
+      },
+    ]);
+    mockIsConnected.mockReturnValue(false);
+    mockHasAuthFiles.mockReturnValue(true);
+    mockIsHeld.mockResolvedValue(true);
 
     const stop = startHealthLoop();
     await runTick();
